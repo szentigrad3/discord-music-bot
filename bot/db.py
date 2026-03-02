@@ -5,14 +5,15 @@ import os
 
 import aiosqlite
 
+from bot.settings import settings
+
 _DATABASE_URL: str = ''
 
 
 def _get_db_path() -> str:
     global _DATABASE_URL
     if not _DATABASE_URL:
-        raw = os.getenv('DATABASE_URL', 'file:./data/bot.db')
-        _DATABASE_URL = raw.replace('file:', '', 1)
+        _DATABASE_URL = settings.database_url.replace('file:', '', 1)
     return _DATABASE_URL
 
 

@@ -2,24 +2,17 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-from pathlib import Path
 
 import aiohttp
-from dotenv import load_dotenv
 
-load_dotenv()
+from bot.settings import settings
 
 DISCORD_API = 'https://discord.com/api/v10'
 
 
 async def main() -> None:
-    token = os.getenv('DISCORD_TOKEN')
-    client_id = os.getenv('DISCORD_CLIENT_ID')
-
-    if not token or not client_id:
-        raise RuntimeError('DISCORD_TOKEN and DISCORD_CLIENT_ID must be set.')
+    if not settings.token or not settings.client_id:
+        raise RuntimeError('token and client_id must be set in settings.json')
 
     # Import the bot and collect all app commands
     import discord
@@ -37,13 +30,13 @@ async def main() -> None:
     print(f'Deploying {len(commands_payload)} application (/) commands...')
 
     headers = {
-        'Authorization': f'Bot {token}',
+        'Authorization': f'Bot {settings.token}',
         'Content-Type': 'application/json',
     }
 
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.put(
-            f'{DISCORD_API}/applications/{client_id}/commands',
+            f'{DISCORD_API}/applications/{settings.client_id}/commands',
             json=commands_payload,
         ) as resp:
             if not resp.ok:

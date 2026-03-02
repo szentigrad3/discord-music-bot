@@ -385,12 +385,12 @@ class Installer:
   dashboard:
     build: .
     restart: unless-stopped
-    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./settings.json:/app/settings.json
     command: ["python", "-m", "bot.dashboard.app"]
     ports:
       - "{dashboard_port}:{dashboard_port}"
-    volumes:
-      - ./data:/app/data
 """ if enable_dashboard else ''
 
         content = (
@@ -398,9 +398,11 @@ class Installer:
             f"  bot:\n"
             f"    build: .\n"
             f"    restart: unless-stopped\n"
-            f"    env_file: .env\n"
             f"    volumes:\n"
             f"      - ./data:/app/data\n"
+            f"      - ./settings.json:/app/settings.json\n"
+            f"    ports:\n"
+            f"      - \"{dashboard_port}:{dashboard_port}\"\n"
             f"{bot_depends}\n"
             f"{lavalink_service}"
             f"{dashboard_service}"
@@ -410,36 +412,34 @@ class Installer:
         dest.write_text(content, encoding='utf-8')
         print(f"{Colors.GREEN}Wrote docker-compose.yml{Colors.END}")
 
-    # ------------------------------------------------------------------ .env writer
+    # ------------------------------------------------------------------ settings.json writer
 
     @staticmethod
-    def _write_env(install_dir: Path, config: dict[str, Any]) -> None:
-        lines = [
-            '# Discord Bot',
-            f"DISCORD_TOKEN={config['bot_token']}",
-            f"DISCORD_CLIENT_ID={config['client_id']}",
-            f"DISCORD_CLIENT_SECRET={config.get('discord_client_secret', '')}",
-            f"DISCORD_CALLBACK_URL={config.get('discord_callback_url', 'http://localhost:3000/auth/discord/callback')}",
-            '',
-            '# Spotify (optional)',
-            f"SPOTIFY_CLIENT_ID={config.get('spotify_client_id', '')}",
-            f"SPOTIFY_CLIENT_SECRET={config.get('spotify_client_secret', '')}",
-            '',
-            '# Dashboard',
-            f"SESSION_SECRET={config.get('session_secret', '')}",
-            f"DASHBOARD_PORT={config.get('dashboard_port', '3000')}",
-            '',
-            '# Database',
-            'DATABASE_URL=file:./data/bot.db',
-            '',
-            '# Lavalink',
-            f"LAVALINK_HOST=lavalink",
-            f"LAVALINK_PORT={config.get('lavalink_port', '2333')}",
-            f"LAVALINK_PASSWORD={config.get('lavalink_password', 'youshallnotpass')}",
-        ]
-        dest = install_dir / '.env'
-        dest.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-        print(f"{Colors.GREEN}Wrote .env{Colors.END}")
+    def _write_settings(install_dir: Path, config: dict[str, Any]) -> None:
+        data = {
+            'token': config['bot_token'],
+            'client_id': config['client_id'],
+            'client_secret': config.get('discord_client_secret', ''),
+            'callback_url': config.get('discord_callback_url', 'http://localhost:3000/auth/discord/callback'),
+
+            'spotify_client_id': config.get('spotify_client_id', ''),
+            'spotify_client_secret': config.get('spotify_client_secret', ''),
+
+            'session_secret': config.get('session_secret', ''),
+            'dashboard_port': int(config.get('dashboard_port', 3000)),
+
+            'database_url': 'file:./data/bot.db',
+
+            'lavalink': {
+                'host': 'lavalink',
+                'port': int(config.get('lavalink_port', 2333)),
+                'password': config.get('lavalink_password', 'youshallnotpass'),
+            },
+        }
+        import json as _json
+        dest = install_dir / 'settings.json'
+        dest.write_text(_json.dumps(data, indent=4) + '\n', encoding='utf-8')
+        print(f"{Colors.GREEN}Wrote settings.json{Colors.END}")
 
     # ------------------------------------------------------------------ lavalink config writer
 
@@ -593,7 +593,7 @@ logging:
 
             # Write configuration files
             self.cfg_mgr._section("📝  WRITING CONFIGURATION FILES", Colors.BLUE)
-            self._write_env(install_dir, config)
+            self._write_settings(install_dir, config)
             self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
             if enable_lavalink:
                 self._write_lavalink_config(install_dir, config)

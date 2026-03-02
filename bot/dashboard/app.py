@@ -1,13 +1,11 @@
 """Flask web dashboard with Discord OAuth2."""
 from __future__ import annotations
 
-import os
 import secrets
 from functools import wraps
 from urllib.parse import urlencode
 
 import requests
-from dotenv import load_dotenv
 from flask import (
     Flask,
     redirect,
@@ -17,7 +15,7 @@ from flask import (
     url_for,
 )
 
-load_dotenv()
+from bot.settings import settings
 
 DISCORD_API = 'https://discord.com/api/v10'
 DISCORD_AUTH_URL = 'https://discord.com/api/oauth2/authorize'
@@ -26,10 +24,7 @@ DISCORD_SCOPES = 'identify guilds'
 MANAGE_GUILD = 0x20
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SESSION_SECRET', '')
-
-if not app.secret_key:
-    raise RuntimeError('SESSION_SECRET environment variable is not set. Refusing to start.')
+app.secret_key = settings.session_secret
 
 
 # ------------------------------------------------------------------ helpers
@@ -56,7 +51,7 @@ def login_required(f):
 
 
 def _callback_url() -> str:
-    return os.getenv('DISCORD_CALLBACK_URL', 'http://localhost:3000/auth/discord/callback')
+    return settings.callback_url
 
 
 # ------------------------------------------------------------------ routes
@@ -73,7 +68,7 @@ def auth_discord():
     state = secrets.token_urlsafe(16)
     session['oauth_state'] = state
     params = {
-        'client_id': os.getenv('DISCORD_CLIENT_ID', ''),
+        'client_id': settings.client_id,
         'redirect_uri': _callback_url(),
         'response_type': 'code',
         'scope': DISCORD_SCOPES,
@@ -96,8 +91,8 @@ def auth_discord_callback():
     token_resp = requests.post(
         DISCORD_TOKEN_URL,
         data={
-            'client_id': os.getenv('DISCORD_CLIENT_ID', ''),
-            'client_secret': os.getenv('DISCORD_CLIENT_SECRET', ''),
+            'client_id': settings.client_id,
+            'client_secret': settings.client_secret,
             'grant_type': 'authorization_code',
             'code': code,
             'redirect_uri': _callback_url(),
@@ -153,7 +148,7 @@ def dashboard():
         'dashboard.html',
         user=user,
         guilds=guilds_with_presence,
-        discord_client_id=os.getenv('DISCORD_CLIENT_ID', ''),
+        discord_client_id=settings.client_id,
     )
 
 
@@ -165,9 +160,9 @@ def guild_settings_get(guild_id: str):
         return 'Forbidden', 403
 
     import asyncio
-    settings = asyncio.run(_get_settings(guild_id))
+    guild_settings = asyncio.run(_get_settings(guild_id))
     csrf = _csrf_token()
-    return render_template('settings.html', user=user, guild_id=guild_id, settings=settings, saved=False, csrf_token=csrf)
+    return render_template('settings.html', user=user, guild_id=guild_id, settings=guild_settings, saved=False, csrf_token=csrf)
 
 
 @app.route('/dashboard/<guild_id>/settings', methods=['POST'])
@@ -197,9 +192,9 @@ def guild_settings_post(guild_id: str):
         'announceNowPlaying': int(announce),
     }))
 
-    settings = asyncio.run(_get_settings(guild_id))
+    guild_settings = asyncio.run(_get_settings(guild_id))
     csrf = _csrf_token()
-    return render_template('settings.html', user=user, guild_id=guild_id, settings=settings, saved=True, csrf_token=csrf)
+    return render_template('settings.html', user=user, guild_id=guild_id, settings=guild_settings, saved=True, csrf_token=csrf)
 
 
 # ------------------------------------------------------------------ db helpers (sync wrappers)
@@ -226,6 +221,8 @@ async def _update_settings(guild_id: str, data: dict) -> dict:
 # ------------------------------------------------------------------ entry point
 
 if __name__ == '__main__':
-    port = int(os.getenv('DASHBOARD_PORT', '3000'))
+    if not settings.session_secret:
+        raise RuntimeError('session_secret is not set in settings.json. Refusing to start.')
+    port = settings.dashboard_port
     print(f'🌐 Dashboard running at http://localhost:{port}')
     app.run(host='0.0.0.0', port=port)
