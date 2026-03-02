@@ -19,6 +19,10 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and yt-d
 
 - Python 3.12+
 - ffmpeg installed on system (or use Docker)
+- **Debian/Ubuntu only**: `python3-venv` and `python3-pip` packages
+  ```bash
+  sudo apt install python3-venv python3-pip
+  ```
 
 ## Setup
 
