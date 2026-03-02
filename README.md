@@ -1,12 +1,12 @@
 # Discord Music Bot
 
-A feature-rich Discord music bot built with Python 3.12, discord.py v2, and yt-dlp. Supports YouTube, SoundCloud, Twitch, Spotify, slash commands, prefix commands, audio filters, and a web dashboard.
+A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lavalink. Supports YouTube, SoundCloud, Twitch, Spotify, slash commands, prefix commands, audio filters, and a web dashboard.
 
 ## Features
 
-- 🎵 **Multi-platform**: YouTube, SoundCloud, Twitch, Spotify (via yt-dlp)
+- 🎵 **Multi-platform**: YouTube, SoundCloud, Twitch, Spotify
 - 🔗 **Playlist support**: YouTube playlists (up to 50 tracks), Spotify albums/playlists
-- 🎛️ **Audio filters**: Nightcore, Bass Boost
+- 🎛️ **Audio filters**: Nightcore, Bass Boost (powered by Lavalink)
 - 🔁 **Repeat modes**: Off, One, All
 - 🔀 **Shuffle** queue
 - 📋 **Slash commands + prefix commands**
@@ -18,7 +18,7 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and yt-d
 ## Requirements
 
 - Python 3.12+
-- ffmpeg installed on system (or use Docker)
+- **Lavalink** server (included in Docker Compose setup)
 - **Debian/Ubuntu only**: `python3-venv` and `python3-pip` packages
   ```bash
   sudo apt install python3-venv python3-pip
@@ -77,6 +77,9 @@ Edit `.env` and fill in:
 - `DISCORD_CALLBACK_URL` — OAuth2 callback URL (e.g. `http://localhost:3000/auth/discord/callback`)
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` — from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (optional)
 - `SESSION_SECRET` — a random secret string for session cookies
+- `LAVALINK_HOST` — Lavalink server host (default: `lavalink`)
+- `LAVALINK_PORT` — Lavalink server port (default: `2333`)
+- `LAVALINK_PASSWORD` — Lavalink server password (default: `youshallnotpass`)
 
 ### 3. Deploy slash commands
 
@@ -156,6 +159,9 @@ Place `.mp3` files in `data/sfx/` and use `/sfx <name>` (without extension).
 | `SESSION_SECRET` | Dashboard | Flask session secret |
 | `DASHBOARD_PORT` | Optional | Dashboard port (default: 3000) |
 | `DATABASE_URL` | ✅ | SQLite file path (e.g. `file:./data/bot.db`) |
+| `LAVALINK_HOST` | ✅ | Lavalink server host (default: `lavalink`) |
+| `LAVALINK_PORT` | Optional | Lavalink server port (default: `2333`) |
+| `LAVALINK_PASSWORD` | Optional | Lavalink server password (default: `youshallnotpass`) |
 
 ## License
 
