@@ -27,6 +27,8 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and yt-d
 ```bash
 git clone <repo-url>
 cd discord-music-bot
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
