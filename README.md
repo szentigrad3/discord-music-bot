@@ -45,6 +45,25 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Updating
+
+Use `update.py` to check for and apply new releases (mirrors the Vocard
+update-script pattern):
+
+```bash
+# Check whether your local version is up-to-date
+python update.py -c
+
+# Download and install the latest release
+python update.py -l
+
+# Download and install a specific release tag
+python update.py -v v1.2.0
+```
+
+Your `.env` file and `data/` directory are preserved automatically during
+an update.
+
 ### 2. Configure environment
 
 ```bash
