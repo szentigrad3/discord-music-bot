@@ -64,32 +64,91 @@ if [ -f ".env" ]; then
 else
     info "Copying .env.example → .env..."
     cp .env.example .env
-    success ".env created. Please edit it and fill in your credentials before starting the bot."
+    success ".env created."
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Create required data directories
+# 6. Configure environment
+# ---------------------------------------------------------------------------
+# Helper: read the current value of a key from .env (strips surrounding quotes)
+_get_env_val() {
+    grep -E "^$1=" .env 2>/dev/null | cut -d= -f2- | sed "s/^['\"]//;s/['\"]$//"
+}
+
+# Helper: set/replace a key=value line in .env (Linux + macOS portable)
+_set_env_var() {
+    local key="$1" value="$2"
+    # Escape characters that are special in sed replacement (\, &, |)
+    local escaped
+    escaped=$(printf '%s' "$value" | sed 's/[\\&|]/\\&/g')
+    if grep -qE "^${key}=" .env; then
+        sed -i.bak "s|^${key}=.*|${key}=${escaped}|" .env && rm -f .env.bak
+    else
+        printf '%s=%s\n' "$key" "$value" >> .env
+    fi
+}
+
+# Helper: prompt for a variable; pass "secret" as 3rd arg to mask input
+_prompt_env() {
+    local key="$1" label="$2" secret="${3:-}" current
+    current=$(_get_env_val "$key")
+    if [ -n "$secret" ]; then
+        if [ -n "$current" ]; then
+            read -rsp "  ${label} [already set, Enter to keep]: " input
+        else
+            read -rsp "  ${label} [not set]: " input
+        fi
+        echo  # newline after hidden input
+    else
+        read -rp "  ${label} [${current}]: " input
+    fi
+    if [ -n "$input" ]; then
+        _set_env_var "$key" "$input"
+    fi
+}
+
+info "Configuring environment variables..."
+echo "  Press Enter to keep the current value. Secret fields are masked."
+echo ""
+_prompt_env "DISCORD_TOKEN"          "Discord bot token            (required)" secret
+_prompt_env "DISCORD_CLIENT_ID"      "Discord application client ID (required)"
+_prompt_env "DISCORD_CLIENT_SECRET"  "Discord OAuth2 client secret (dashboard)" secret
+_prompt_env "DISCORD_CALLBACK_URL"   "Discord OAuth2 callback URL  (dashboard)"
+_prompt_env "SPOTIFY_CLIENT_ID"      "Spotify client ID            (optional)"
+_prompt_env "SPOTIFY_CLIENT_SECRET"  "Spotify client secret        (optional)" secret
+_prompt_env "SESSION_SECRET"         "Dashboard session secret     (dashboard)" secret
+echo ""
+success "Environment configured. Values saved to .env."
+
+# ---------------------------------------------------------------------------
+# 7. Create required data directories
 # ---------------------------------------------------------------------------
 info "Creating data directories..."
 mkdir -p data/sfx
 success "data/sfx directory is ready."
 
 # ---------------------------------------------------------------------------
-# 7. Prompt to deploy slash commands
+# 8. Deploy slash commands
 # ---------------------------------------------------------------------------
+echo ""
+read -r -p "Deploy slash commands to Discord now? [y/N]: " _deploy
+if [[ "$_deploy" =~ ^[Yy]$ ]]; then
+    info "Deploying slash commands..."
+    "$VENV_DIR/bin/python" deploy_commands.py
+    success "Slash commands deployed."
+else
+    info "Skipping slash command deployment."
+    echo "  You can deploy later with:  .venv/bin/python deploy_commands.py"
+fi
+
 echo ""
 echo "-----------------------------------------------------"
 echo " Setup complete!"
 echo "-----------------------------------------------------"
 echo ""
 echo "Next steps:"
-echo "  1. Edit .env and fill in your Discord (and optionally Spotify) credentials."
-echo "  2. Activate the virtual environment:"
-echo "       source .venv/bin/activate"
-echo "  3. Deploy slash commands to Discord:"
-echo "       .venv/bin/python deploy_commands.py"
-echo "  4. Start the bot:"
+echo "  1. Start the bot:"
 echo "       .venv/bin/python -m bot.main"
-echo "  5. (Optional) Start the web dashboard:"
+echo "  2. (Optional) Start the web dashboard:"
 echo "       .venv/bin/python -m bot.dashboard.app"
 echo ""
