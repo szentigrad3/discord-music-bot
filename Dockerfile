@@ -5,6 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# Ensure user-local scripts are on PATH
+ENV PATH="/root/.local/bin:${PATH}"
+
 WORKDIR /app
 
 # Copy requirements first for layer caching
