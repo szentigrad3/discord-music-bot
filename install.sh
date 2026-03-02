@@ -27,6 +27,13 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR"
 fi
 success "Python $PYTHON_VERSION found."
 
+# Check that the ensurepip module is available (often absent on Debian/Ubuntu
+# when python3-venv / python3-pip are not installed).
+if ! python3 -c "import ensurepip" &>/dev/null; then
+    error "Python's 'ensurepip' module is not available. On Debian/Ubuntu run:
+  sudo apt install python3-venv python3-pip"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Check for ffmpeg
 # ---------------------------------------------------------------------------
