@@ -1,0 +1,51 @@
+{
+  "errors": {
+    "notInVoice": "❌ Debes estar en un canal de voz para usar este comando.",
+    "nothingPlaying": "❌ No se está reproduciendo nada actualmente.",
+    "queueEmpty": "❌ La cola está vacía.",
+    "noResults": "❌ No se encontraron resultados para tu búsqueda.",
+    "notConnected": "❌ No estoy conectado a ningún canal de voz.",
+    "notEnoughTracks": "❌ Se necesitan al menos 2 pistas en la cola para mezclar.",
+    "missingPermissions": "❌ No tienes permiso para usar este comando.",
+    "generic": "❌ Algo salió mal. Por favor, inténtalo de nuevo."
+  },
+  "play": {
+    "added": "✅ Añadido a la Cola",
+    "addedPlaylist": "✅ Lista de reproducción añadida",
+    "addedPlaylistDesc": "Se añadieron **{{count}}** pistas a la cola.",
+    "searching": "🔍 Buscando..."
+  },
+  "skip": {
+    "skipped": "⏭️ Saltado **{{title}}**."
+  },
+  "stop": {
+    "stopped": "⏹️ Reproducción detenida y cola limpiada."
+  },
+  "pause": {
+    "paused": "⏸️ Reproducción pausada.",
+    "alreadyPaused": "⏸️ La reproducción ya está pausada."
+  },
+  "resume": {
+    "resumed": "▶️ Reproducción reanudada.",
+    "notPaused": "▶️ La reproducción no está pausada."
+  },
+  "volume": {
+    "set": "🔊 Volumen ajustado a **{{level}}%**."
+  },
+  "shuffle": {
+    "shuffled": "🔀 Se mezclaron **{{count}}** pistas."
+  },
+  "repeat": {
+    "set": "🔁 Modo de repetición ajustado a **{{mode}}**."
+  },
+  "leave": {
+    "left": "👋 Desconectado del canal de voz."
+  },
+  "filter": {
+    "set": "🎛️ Filtro ajustado a **{{name}}**."
+  },
+  "settings": {
+    "updated": "✅ Configuración actualizada.",
+    "shown": "⚙️ Configuración actual:"
+  }
+}

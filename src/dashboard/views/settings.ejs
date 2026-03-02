@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Discord Music Bot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; }
+    nav { background: #16213e; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+    nav h1 { color: #7289da; font-size: 1.3rem; }
+    nav .user { display: flex; align-items: center; gap: 12px; }
+    nav img { border-radius: 50%; width: 36px; height: 36px; }
+    nav a { color: #aaa; text-decoration: none; }
+    nav a:hover { color: #fff; }
+    .container { max-width: 600px; margin: 40px auto; padding: 0 24px; }
+    .card { background: #16213e; border-radius: 12px; padding: 32px; }
+    h2 { margin-bottom: 24px; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 0.9rem; color: #aaa; margin-bottom: 6px; }
+    input[type="text"], input[type="number"], select {
+      width: 100%; background: #0f3460; border: 1px solid #30336b; border-radius: 6px;
+      padding: 10px 14px; color: #e0e0e0; font-size: 0.95rem;
+    }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: #7289da; }
+    .checkbox-group { display: flex; align-items: center; gap: 10px; }
+    button[type="submit"] {
+      background: #7289da; color: #fff; border: none; padding: 12px 28px;
+      border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
+    }
+    button[type="submit"]:hover { background: #5b6eae; }
+    .success { background: #43b581; color: #fff; padding: 10px 16px; border-radius: 6px; margin-bottom: 20px; }
+    .back { display: inline-block; margin-bottom: 20px; color: #7289da; text-decoration: none; }
+    .back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <nav>
+    <h1 aria-label="Music Bot Dashboard"><span aria-hidden="true">🎵</span> Music Bot Dashboard</h1>
+    <div class="user">
+      <img src="https://cdn.discordapp.com/avatars/<%= user.id %>/<%= user.avatar %>.png" alt="avatar" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+      <span><%= user.username %></span>
+      <a href="/auth/logout">Logout</a>
+    </div>
+  </nav>
+  <div class="container">
+    <a class="back" href="/dashboard">← Back to Dashboard</a>
+    <div class="card">
+      <h2 aria-label="Server Settings"><span aria-hidden="true">⚙️</span> Server Settings</h2>
+      <% if (saved) { %>
+        <div class="success">✅ Settings saved successfully!</div>
+      <% } %>
+      <form method="POST" action="/dashboard/<%= guildId %>/settings">
+        <div class="form-group">
+          <label for="prefix">Command Prefix</label>
+          <input type="text" id="prefix" name="prefix" value="<%= settings.prefix ?? '!' %>" maxlength="5" required>
+        </div>
+        <div class="form-group">
+          <label for="language">Language</label>
+          <select id="language" name="language">
+            <option value="en" <%= settings.language === 'en' ? 'selected' : '' %>>English</option>
+            <option value="es" <%= settings.language === 'es' ? 'selected' : '' %>>Español</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="defaultVolume">Default Volume (1–100)</label>
+          <input type="number" id="defaultVolume" name="defaultVolume" value="<%= settings.defaultVolume ?? 80 %>" min="1" max="100" required>
+        </div>
+        <div class="form-group">
+          <label for="djRoleId">DJ Role ID (optional)</label>
+          <input type="text" id="djRoleId" name="djRoleId" value="<%= settings.djRoleId ?? '' %>" placeholder="Leave blank to disable">
+        </div>
+        <div class="form-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="announceNowPlaying" name="announceNowPlaying" <%= settings.announceNowPlaying ? 'checked' : '' %>>
+            <label for="announceNowPlaying" style="margin-bottom:0">Announce Now Playing</label>
+          </div>
+        </div>
+        <button type="submit">Save Settings</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

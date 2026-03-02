@@ -1,0 +1,51 @@
+{
+  "errors": {
+    "notInVoice": "❌ You must be in a voice channel to use this command.",
+    "nothingPlaying": "❌ Nothing is currently playing.",
+    "queueEmpty": "❌ The queue is empty.",
+    "noResults": "❌ No results found for your query.",
+    "notConnected": "❌ I'm not connected to any voice channel.",
+    "notEnoughTracks": "❌ Need at least 2 tracks in the queue to shuffle.",
+    "missingPermissions": "❌ You don't have permission to use this command.",
+    "generic": "❌ Something went wrong. Please try again."
+  },
+  "play": {
+    "added": "✅ Added to Queue",
+    "addedPlaylist": "✅ Playlist Added",
+    "addedPlaylistDesc": "Added **{{count}}** tracks to the queue.",
+    "searching": "🔍 Searching..."
+  },
+  "skip": {
+    "skipped": "⏭️ Skipped **{{title}}**."
+  },
+  "stop": {
+    "stopped": "⏹️ Stopped playback and cleared the queue."
+  },
+  "pause": {
+    "paused": "⏸️ Paused playback.",
+    "alreadyPaused": "⏸️ Playback is already paused."
+  },
+  "resume": {
+    "resumed": "▶️ Resumed playback.",
+    "notPaused": "▶️ Playback is not paused."
+  },
+  "volume": {
+    "set": "🔊 Volume set to **{{level}}%**."
+  },
+  "shuffle": {
+    "shuffled": "🔀 Shuffled **{{count}}** tracks."
+  },
+  "repeat": {
+    "set": "🔁 Repeat mode set to **{{mode}}**."
+  },
+  "leave": {
+    "left": "👋 Disconnected from the voice channel."
+  },
+  "filter": {
+    "set": "🎛️ Filter set to **{{name}}**."
+  },
+  "settings": {
+    "updated": "✅ Settings updated.",
+    "shown": "⚙️ Current settings:"
+  }
+}
