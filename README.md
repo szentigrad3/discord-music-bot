@@ -10,6 +10,9 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lava
 - 🔁 **Repeat modes**: Off, One, All
 - 🔀 **Shuffle** queue
 - 📋 **Slash commands + prefix commands**
+- 🕹️ **Interactive controller** — Vocard-style panel with ⏮️ Back, ⏸️/▶️ Play/Pause, ⏭️ Skip, ⏹️ Stop, 🔁 Loop, 🔀 Shuffle, 🔉/🔊 Volume buttons sent directly in the music channel
+- 🔍 **Search command** — shows a select-menu of results so users can pick a track
+- ⏮️ **Back command** — returns to the previously played track (track history)
 - 🌐 **Web Dashboard** with Discord OAuth2
 - 🌍 **i18n**: English and Spanish
 - 🗄️ **SQLite** via aiosqlite
@@ -117,7 +120,11 @@ The dashboard will be available at `http://localhost:3000`.
 | Command | Description |
 |---------|-------------|
 | `/play <query>` | Play a song from YouTube, SoundCloud, or Spotify |
+| `/search <query>` | Search YouTube and pick a track from a select-menu |
 | `/skip` | Skip the current track |
+| `/back` | Go back to the previous track |
+| `/skipto <position>` | Jump to a specific position in the queue |
+| `/remove <position>` | Remove a track from the queue |
 | `/stop` | Stop playback and clear queue |
 | `/pause` | Pause playback |
 | `/resume` | Resume playback |

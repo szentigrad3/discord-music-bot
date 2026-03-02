@@ -54,11 +54,15 @@ class MusicPlayer:
         wl_player._music_player = self  # type: ignore[attr-defined]
 
         self.tracks: list[Track] = []
+        self.history: list[Track] = []
         self.current: Track | None = None
         self._volume: int = 80
         self.filter: str = 'none'
         self.repeat_mode: int = RepeatMode.OFF
         self.paused: bool = False
+
+        # Interactive controller message (Vocard-style)
+        self._controller_message: discord.Message | None = None
 
     @property
     def volume(self) -> int:
@@ -83,6 +87,7 @@ class MusicPlayer:
 
     async def _play(self, track: Track) -> None:
         self.current = track
+        self.paused = False
         wl_track = await self._resolve_wl_track(track)
         if not wl_track:
             print(f'[Player:{self.guild.id}] Could not resolve "{track.title}", skipping.')
@@ -101,30 +106,39 @@ class MusicPlayer:
 
         if self.text_channel:
             try:
-                from bot.db import get_guild_settings
-                settings = await get_guild_settings(str(self.guild.id))
-                if settings and settings.get('announceNowPlaying'):
-                    embed = discord.Embed(
-                        title='🎵 Now Playing',
-                        description=f'**[{track.title}]({track.url})**',
-                        color=0x5865F2,
-                    )
-                    embed.add_field(name='Duration', value=track.duration, inline=True)
-                    embed.add_field(
-                        name='Requested by',
-                        value=track.requested_by or 'Unknown',
-                        inline=True,
-                    )
-                    if track.thumbnail:
-                        embed.set_thumbnail(url=track.thumbnail)
-                    await self.text_channel.send(embed=embed)
+                await self._send_or_update_controller()
             except Exception:
                 pass
+
+    async def _send_or_update_controller(self) -> None:
+        """Send a new controller message or update the existing one."""
+        from bot.views.controller import PlayerController, build_now_playing_embed
+
+        embed = build_now_playing_embed(self)
+        view = PlayerController(self)
+
+        if self._controller_message:
+            try:
+                await self._controller_message.edit(embed=embed, view=view)
+                return
+            except (discord.NotFound, discord.HTTPException):
+                self._controller_message = None
+
+        try:
+            self._controller_message = await self.text_channel.send(embed=embed, view=view)
+        except Exception as e:
+            print(f'[Player:{self.guild.id}] Failed to send controller: {e}')
 
     async def _on_track_end(self) -> None:
         if self.repeat_mode == RepeatMode.ONE and self.current:
             await self._play(self.current)
             return
+
+        if self.current:
+            self.history.append(self.current)
+            # Keep history bounded to last 20 tracks
+            if len(self.history) > 20:
+                self.history.pop(0)
 
         if self.repeat_mode == RepeatMode.ALL and self.current:
             self.tracks.append(self.current)
@@ -160,6 +174,16 @@ class MusicPlayer:
     async def skip(self) -> None:
         await self._wl_player.stop()
 
+    async def back(self) -> None:
+        """Go back to the previous track in history."""
+        if not self.history:
+            return
+        prev = self.history.pop()
+        # Insert the previous track at the front of the queue so _on_track_end
+        # picks it up naturally after stop() fires the track-end event.
+        self.tracks.insert(0, prev)
+        await self._wl_player.stop()
+
     async def pause(self) -> None:
         await self._wl_player.pause(True)
         self.paused = True
@@ -173,6 +197,7 @@ class MusicPlayer:
         self.repeat_mode = RepeatMode.OFF
         self.current = None
         await self._wl_player.stop()
+        await self._disable_controller()
 
     async def set_volume(self, vol: int) -> None:
         self.volume = vol
@@ -193,7 +218,28 @@ class MusicPlayer:
 
     # ------------------------------------------------------------------ cleanup
 
+    async def _disable_controller(self) -> None:
+        """Disable all controller buttons when playback ends."""
+        if not self._controller_message:
+            return
+        try:
+            from bot.views.controller import PlayerController, build_now_playing_embed
+            view = PlayerController(self)
+            for child in view.children:
+                child.disabled = True
+            embed = discord.Embed(
+                title='⏹️ Playback stopped',
+                description='Queue cleared.',
+                color=0x5865F2,
+            )
+            await self._controller_message.edit(embed=embed, view=view)
+        except Exception:
+            pass
+        finally:
+            self._controller_message = None
+
     async def _cleanup(self) -> None:
+        await self._disable_controller()
         if self._wl_player and self._wl_player.connected:
             await self._wl_player.disconnect()
         guild_id = str(self.guild.id)
