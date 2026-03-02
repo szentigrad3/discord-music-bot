@@ -24,9 +24,18 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and yt-d
 
 ### 1. Clone & install
 
+Run the provided install script — it checks prerequisites, creates a virtual
+environment, installs dependencies, and sets up required directories:
+
 ```bash
 git clone <repo-url>
 cd discord-music-bot
+bash install.sh
+```
+
+Or install manually:
+
+```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
@@ -35,7 +44,7 @@ pip install -r requirements.txt
 ### 2. Configure environment
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # skipped automatically by install.sh
 ```
 
 Edit `.env` and fill in:
