@@ -10,7 +10,7 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    command: ["sh", "-c", "npx prisma migrate deploy && node src/dashboard/index.js"]
+    command: ["python", "-m", "bot.dashboard.app"]
     ports:
       - "${DASHBOARD_PORT:-3000}:3000"
     volumes:

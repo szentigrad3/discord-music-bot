@@ -1,6 +1,6 @@
 # Discord Music Bot
 
-A feature-rich Discord music bot built with Node.js 20, discord.js v14, and yt-dlp. Supports YouTube, SoundCloud, Twitch, Spotify, slash commands, prefix commands, audio filters, and a web dashboard.
+A feature-rich Discord music bot built with Python 3.12, discord.py v2, and yt-dlp. Supports YouTube, SoundCloud, Twitch, Spotify, slash commands, prefix commands, audio filters, and a web dashboard.
 
 ## Features
 
@@ -12,14 +12,13 @@ A feature-rich Discord music bot built with Node.js 20, discord.js v14, and yt-d
 - 📋 **Slash commands + prefix commands**
 - 🌐 **Web Dashboard** with Discord OAuth2
 - 🌍 **i18n**: English and Spanish
-- 🗄️ **SQLite** via Prisma ORM
+- 🗄️ **SQLite** via aiosqlite
 - 🐳 **Docker** support
 
 ## Requirements
 
-- Node.js 20+
+- Python 3.12+
 - ffmpeg installed on system (or use Docker)
-- yt-dlp installed on system (or use Docker)
 
 ## Setup
 
@@ -28,7 +27,7 @@ A feature-rich Discord music bot built with Node.js 20, discord.js v14, and yt-d
 ```bash
 git clone <repo-url>
 cd discord-music-bot
-npm install
+pip install -r requirements.txt
 ```
 
 ### 2. Configure environment
@@ -45,29 +44,22 @@ Edit `.env` and fill in:
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` — from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (optional)
 - `SESSION_SECRET` — a random secret string for session cookies
 
-### 3. Set up the database
+### 3. Deploy slash commands
 
 ```bash
-npx prisma migrate deploy
-npx prisma generate
+python deploy_commands.py
 ```
 
-### 4. Deploy slash commands
+### 4. Start the bot
 
 ```bash
-npm run deploy
+python -m bot.main
 ```
 
-### 5. Start the bot
+### 5. Start the dashboard (optional)
 
 ```bash
-npm start
-```
-
-### 6. Start the dashboard (optional)
-
-```bash
-npm run dashboard
+python -m bot.dashboard.app
 ```
 
 ## Docker
@@ -127,7 +119,7 @@ Place `.mp3` files in `data/sfx/` and use `/sfx <name>` (without extension).
 | `DISCORD_CALLBACK_URL` | Dashboard | OAuth2 callback URL |
 | `SPOTIFY_CLIENT_ID` | Optional | Spotify app client ID |
 | `SPOTIFY_CLIENT_SECRET` | Optional | Spotify app client secret |
-| `SESSION_SECRET` | Dashboard | Express session secret |
+| `SESSION_SECRET` | Dashboard | Flask session secret |
 | `DASHBOARD_PORT` | Optional | Dashboard port (default: 3000) |
 | `DATABASE_URL` | ✅ | SQLite file path (e.g. `file:./data/bot.db`) |
 
