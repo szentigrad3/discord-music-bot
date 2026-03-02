@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
-import { Strategy as DiscordStrategy } from 'passport-discord';
+import { Strategy as DiscordStrategy } from 'passport-discord-auth';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
@@ -17,13 +17,12 @@ const MANAGE_GUILD = 0x20;
 // ---- Passport setup ----
 passport.use(new DiscordStrategy(
   {
-    clientID: process.env.DISCORD_CLIENT_ID,
+    clientId: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    callbackURL: process.env.DISCORD_CALLBACK_URL ?? 'http://localhost:3000/auth/discord/callback',
+    callbackUrl: process.env.DISCORD_CALLBACK_URL ?? 'http://localhost:3000/auth/discord/callback',
     scope: DISCORD_SCOPES,
   },
   (accessToken, refreshToken, profile, done) => {
-    profile.accessToken = accessToken;
     return done(null, profile);
   },
 ));
