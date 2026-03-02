@@ -51,6 +51,7 @@
         <div class="success">✅ Settings saved successfully!</div>
       <% } %>
       <form method="POST" action="/dashboard/<%= guildId %>/settings">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <div class="form-group">
           <label for="prefix">Command Prefix</label>
           <input type="text" id="prefix" name="prefix" value="<%= settings.prefix ?? '!' %>" maxlength="5" required>

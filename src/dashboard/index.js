@@ -5,6 +5,8 @@ import passport from 'passport';
 import { Strategy as DiscordStrategy } from 'passport-discord';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
+import { doubleCsrf } from 'csrf-csrf';
 import { getGuildSettings, updateGuildSettings } from '../db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +51,25 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// ---- Rate limiting ----
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests, please try again later.',
+});
+
+// ---- CSRF protection ----
+const { generateToken, doubleCsrfProtection } = doubleCsrf({
+  getSecret: () => process.env.SESSION_SECRET,
+  cookieName: '__Host-psifi.x-csrf-token',
+  cookieOptions: {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+  },
+});
+
 // ---- Auth middleware ----
 function ensureAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
@@ -56,26 +77,27 @@ function ensureAuth(req, res, next) {
 }
 
 // ---- Routes ----
-app.get('/', (req, res) => {
+app.get('/', authLimiter, (req, res) => {
   if (req.isAuthenticated()) return res.redirect('/dashboard');
   res.render('index', { user: null });
 });
 
-app.get('/auth/discord', passport.authenticate('discord'));
+app.get('/auth/discord', authLimiter, passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
+  authLimiter,
   passport.authenticate('discord', { failureRedirect: '/' }),
   (req, res) => res.redirect('/dashboard'),
 );
 
-app.get('/auth/logout', (req, res, next) => {
+app.get('/auth/logout', authLimiter, (req, res, next) => {
   req.logout(err => {
     if (err) return next(err);
     res.redirect('/');
   });
 });
 
-app.get('/dashboard', ensureAuth, async (req, res) => {
+app.get('/dashboard', authLimiter, ensureAuth, async (req, res) => {
   const user = req.user;
   // Filter guilds where user has Manage Guild
   const manageableGuilds = (user.guilds ?? []).filter(g => (parseInt(g.permissions) & MANAGE_GUILD) === MANAGE_GUILD);
@@ -98,7 +120,7 @@ app.get('/dashboard', ensureAuth, async (req, res) => {
   res.render('dashboard', { user, guilds: guildsWithPresence });
 });
 
-app.get('/dashboard/:guildId/settings', ensureAuth, async (req, res) => {
+app.get('/dashboard/:guildId/settings', authLimiter, ensureAuth, async (req, res) => {
   const { guildId } = req.params;
   const user = req.user;
 
@@ -108,10 +130,11 @@ app.get('/dashboard/:guildId/settings', ensureAuth, async (req, res) => {
   if (!hasAccess) return res.status(403).send('Forbidden');
 
   const settings = await getGuildSettings(guildId).catch(() => ({}));
-  res.render('settings', { user, guildId, settings, saved: false });
+  const csrfToken = generateToken(req, res);
+  res.render('settings', { user, guildId, settings, saved: false, csrfToken });
 });
 
-app.post('/dashboard/:guildId/settings', ensureAuth, async (req, res) => {
+app.post('/dashboard/:guildId/settings', authLimiter, ensureAuth, doubleCsrfProtection, async (req, res) => {
   const { guildId } = req.params;
   const user = req.user;
 
@@ -131,7 +154,8 @@ app.post('/dashboard/:guildId/settings', ensureAuth, async (req, res) => {
   });
 
   const settings = await getGuildSettings(guildId).catch(() => ({}));
-  res.render('settings', { user, guildId, settings, saved: true });
+  const csrfToken = generateToken(req, res);
+  res.render('settings', { user, guildId, settings, saved: true, csrfToken });
 });
 
 // ---- Start ----
