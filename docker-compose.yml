@@ -1,0 +1,17 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+
+  dashboard:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: ["sh", "-c", "npx prisma migrate deploy && node src/dashboard/index.js"]
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
