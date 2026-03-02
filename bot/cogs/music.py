@@ -10,6 +10,7 @@ from bot.db import get_guild_settings, update_guild_settings
 from bot.i18n import t
 from bot.music.player import FILTERS, MusicPlayer, RepeatMode
 from bot.music.queue import get_or_create_player, resolve_tracks
+from bot.views import SearchView, build_now_playing_embed
 
 PAGE_SIZE = 10
 
@@ -136,6 +137,40 @@ class Music(commands.Cog):
         title = player.current.title
         await player.skip()
         msg = t('skip.skipped', lang, {'title': title})
+        if is_inter:
+            return await ctx.response.send_message(msg)
+        return await ctx.reply(msg)
+
+    # =================================================================== /back ==
+
+    @app_commands.command(name='back', description='Go back to the previous track')
+    async def back_slash(self, interaction: discord.Interaction) -> None:
+        await self._back(interaction)
+
+    @commands.command(name='back', aliases=['previous', 'prev'])
+    async def back_prefix(self, ctx: commands.Context) -> None:
+        await self._back(ctx)
+
+    async def _back(self, ctx) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        lang = await self._get_lang(guild)
+        player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
+
+        if not player:
+            msg = t('errors.nothingPlaying', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if not player.history:
+            msg = '❌ No previous tracks in history.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        await player.back()
+        msg = '⏮️ Going back to the previous track.'
         if is_inter:
             return await ctx.response.send_message(msg)
         return await ctx.reply(msg)
@@ -499,27 +534,155 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        track = player.current
-        repeat_labels = {RepeatMode.OFF: 'Off', RepeatMode.ONE: 'One', RepeatMode.ALL: 'All'}
-
-        embed = discord.Embed(
-            title='🎵 Now Playing',
-            description=f'**[{track.title}]({track.url})**',
-            color=0x5865F2,
-        )
-        embed.add_field(name='Duration', value=track.duration, inline=True)
-        embed.add_field(name='Requested by', value=track.requested_by or 'Unknown', inline=True)
-        embed.add_field(name='Volume', value=f'{player.volume}%', inline=True)
-        embed.add_field(name='Filter', value=player.filter, inline=True)
-        embed.add_field(name='Repeat', value=repeat_labels[player.repeat_mode], inline=True)
-        embed.add_field(name='Queue', value=f'{len(player.tracks)} track(s)', inline=True)
-
-        if track.thumbnail:
-            embed.set_thumbnail(url=track.thumbnail)
+        embed = build_now_playing_embed(player)
 
         if is_inter:
             return await ctx.response.send_message(embeds=[embed])
         return await ctx.reply(embeds=[embed])
+
+
+    # ================================================================= /search ==
+
+    @app_commands.command(name='search', description='Search for tracks and pick one from a list')
+    @app_commands.describe(query='Search query')
+    async def search_slash(self, interaction: discord.Interaction, query: str) -> None:
+        await self._search(interaction, query)
+
+    @commands.command(name='search')
+    async def search_prefix(self, ctx: commands.Context, *, query: str = '') -> None:
+        await self._search(ctx, query)
+
+    async def _search(self, ctx, query: str) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        member = ctx.user if is_inter else ctx.author
+        lang = await self._get_lang(guild)
+
+        async def reply(content=None, *, ephemeral=False, **kwargs):
+            if is_inter:
+                if ctx.response.is_done():
+                    return await ctx.followup.send(content, ephemeral=ephemeral, **kwargs)
+                return await ctx.response.send_message(content, ephemeral=ephemeral, **kwargs)
+            return await ctx.reply(content, **kwargs)
+
+        async def edit_reply(content=None, **kwargs):
+            if is_inter:
+                return await ctx.edit_original_response(content=content, **kwargs)
+            return await ctx.reply(content, **kwargs)
+
+        if not query:
+            return await reply('Please provide a search query.', ephemeral=True)
+
+        voice_channel = getattr(member.voice, 'channel', None) if hasattr(member, 'voice') else None
+        if not voice_channel:
+            return await reply(t('errors.notInVoice', lang), ephemeral=True)
+
+        if is_inter:
+            await ctx.response.defer()
+
+        # Search for results
+        try:
+            import wavelink
+            results: wavelink.Search = await wavelink.Playable.search(f'ytsearch:{query}')
+        except Exception as err:
+            return await edit_reply(f'❌ {err}')
+
+        if not results:
+            return await edit_reply(t('errors.noResults', lang))
+
+        from bot.music.track import Track
+        from bot.views.search import MAX_SEARCH_RESULTS
+
+        tracks = [Track.from_wavelink(r, str(member)) for r in results[:MAX_SEARCH_RESULTS]]
+        player = await get_or_create_player(guild, voice_channel, ctx.channel, self.bot)
+        settings = await get_guild_settings(str(guild.id))
+        player.volume = settings.get('defaultVolume', 80)
+
+        embed = discord.Embed(
+            title=f'🔍 Search results for: {query}',
+            color=0x5865F2,
+        )
+        lines = [
+            f'`{i + 1}.` [{t_.title}]({t_.url}) — {t_.duration}'
+            for i, t_ in enumerate(tracks)
+        ]
+        embed.description = '\n'.join(lines)
+        view = SearchView(tracks, player)
+
+        await edit_reply(embeds=[embed], view=view)
+
+    # ================================================================ /skipto ==
+
+    @app_commands.command(name='skipto', description='Jump to a specific position in the queue')
+    @app_commands.describe(position='Queue position (1-based)')
+    async def skipto_slash(self, interaction: discord.Interaction, position: app_commands.Range[int, 1]) -> None:
+        await self._skipto(interaction, position)
+
+    @commands.command(name='skipto', aliases=['st'])
+    async def skipto_prefix(self, ctx: commands.Context, position: int = 0) -> None:
+        await self._skipto(ctx, position)
+
+    async def _skipto(self, ctx, position: int) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        lang = await self._get_lang(guild)
+        player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
+
+        if not player or (not player.current and not player.tracks):
+            msg = t('errors.nothingPlaying', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if position < 1 or position > len(player.tracks):
+            msg = f'❌ Position must be between 1 and {len(player.tracks)}.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        # Remove all tracks before the target position
+        player.tracks = player.tracks[position - 1:]
+        await player.skip()
+
+        msg = f'⏭️ Skipping to position **{position}**.'
+        if is_inter:
+            return await ctx.response.send_message(msg)
+        return await ctx.reply(msg)
+
+    # ================================================================ /remove ==
+
+    @app_commands.command(name='remove', description='Remove a track from the queue')
+    @app_commands.describe(position='Queue position to remove (1-based)')
+    async def remove_slash(self, interaction: discord.Interaction, position: app_commands.Range[int, 1]) -> None:
+        await self._remove(interaction, position)
+
+    @commands.command(name='remove', aliases=['rm'])
+    async def remove_prefix(self, ctx: commands.Context, position: int = 0) -> None:
+        await self._remove(ctx, position)
+
+    async def _remove(self, ctx, position: int) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        lang = await self._get_lang(guild)
+        player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
+
+        if not player or not player.tracks:
+            msg = t('errors.queueEmpty', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if position < 1 or position > len(player.tracks):
+            msg = f'❌ Position must be between 1 and {len(player.tracks)}.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        removed = player.tracks.pop(position - 1)
+        msg = f'🗑️ Removed **{removed.title}** from position {position}.'
+        if is_inter:
+            return await ctx.response.send_message(msg)
+        return await ctx.reply(msg)
 
 
 async def setup(bot: commands.Bot) -> None:
