@@ -207,9 +207,7 @@ export class MusicPlayer {
     this.volume = Math.max(1, Math.min(100, vol));
     // Restart current track to apply new volume (no inline volume manipulation)
     if (this.current) {
-      const track = this.current;
-      this.current = null;
-      this._play(track);
+      this._play(this.current);
     }
   }
 
@@ -218,9 +216,7 @@ export class MusicPlayer {
     if (!(filterName in FILTERS)) return false;
     this.filter = filterName;
     if (this.current) {
-      const track = this.current;
-      this.current = null;
-      this._play(track);
+      this._play(this.current);
     }
     return true;
   }

@@ -16,5 +16,5 @@ client.commands = new Collection();
 /** @type {Collection<string, object>} Prefix commands */
 client.prefixCommands = new Collection();
 
-/** @type {Map<string, import('./music/Queue.js').MusicQueue>} Per-guild queues */
+/** @type {Map<string, import('./music/Player.js').MusicPlayer>} Per-guild queues */
 client.queues = new Map();
