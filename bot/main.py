@@ -4,6 +4,7 @@ import asyncio
 import os
 
 import discord
+import wavelink
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -57,17 +58,39 @@ async def on_ready() -> None:
 
 
 @bot.event
+async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload) -> None:
+    print(f'✅ Lavalink node connected: {payload.node.identifier} (resumed={payload.resumed})')
+
+
+@bot.event
+async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload) -> None:
+    wl_player = payload.player
+    music_player = getattr(wl_player, '_music_player', None)
+    if music_player is None:
+        return
+    # Only advance the queue for "normal" end reasons (finished, loadFailed, etc.)
+    # Reason 'replaced' means a new track was explicitly started, so skip
+    if payload.reason == 'replaced':
+        return
+    await music_player._on_track_end()
+
+
+@bot.event
 async def on_voice_state_update(
     member: discord.Member,
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
     guild = member.guild
-    voice_client = guild.voice_client
-    if not voice_client or not voice_client.is_connected():
+    music_player = bot.queues.get(str(guild.id))
+    if not music_player:
         return
 
-    bot_channel = voice_client.channel
+    wl_player = music_player._wl_player
+    if not wl_player or not wl_player.connected:
+        return
+
+    bot_channel = wl_player.channel
     if not bot_channel:
         return
 
@@ -78,20 +101,17 @@ async def on_voice_state_update(
     await asyncio.sleep(5)
 
     # Re-check after the delay
-    voice_client = guild.voice_client
-    if not voice_client or not voice_client.is_connected():
+    if not wl_player.connected:
         return
-    bot_channel = voice_client.channel
+    bot_channel = wl_player.channel
     if not bot_channel:
         return
     non_bots = [m for m in bot_channel.members if not m.bot]
     if non_bots:
         return
 
-    player = bot.queues.get(str(guild.id))
-    if player:
-        player.stop()
-    await voice_client.disconnect()
+    await music_player.stop()
+    await wl_player.disconnect()
     bot.queues.pop(str(guild.id), None)
     print(f'[voiceStateUpdate] Auto-left empty channel in guild {guild.id}')
 
@@ -117,6 +137,16 @@ async def main() -> None:
         token = os.getenv('DISCORD_TOKEN')
         if not token:
             raise RuntimeError('DISCORD_TOKEN environment variable is not set.')
+
+        lavalink_host = os.getenv('LAVALINK_HOST', 'lavalink')
+        lavalink_port = os.getenv('LAVALINK_PORT', '2333')
+        lavalink_password = os.getenv('LAVALINK_PASSWORD', 'youshallnotpass')
+
+        node = wavelink.Node(
+            uri=f'http://{lavalink_host}:{lavalink_port}',
+            password=lavalink_password,
+        )
+        await wavelink.Pool.connect(nodes=[node], client=bot, cache_capacity=100)
 
         await bot.start(token)
 

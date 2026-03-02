@@ -134,7 +134,7 @@ class Music(commands.Cog):
             return await ctx.reply(msg)
 
         title = player.current.title
-        player.skip()
+        await player.skip()
         msg = t('skip.skipped', lang, {'title': title})
         if is_inter:
             return await ctx.response.send_message(msg)
@@ -162,7 +162,7 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        player.stop()
+        await player.stop()
         msg = t('stop.stopped', lang)
         if is_inter:
             return await ctx.response.send_message(msg)
@@ -196,7 +196,7 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        player.pause()
+        await player.pause()
         msg = t('pause.paused', lang)
         if is_inter:
             return await ctx.response.send_message(msg)
@@ -230,7 +230,7 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        player.resume()
+        await player.resume()
         msg = t('resume.resumed', lang)
         if is_inter:
             return await ctx.response.send_message(msg)
@@ -328,7 +328,7 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        player.set_volume(level)
+        await player.set_volume(level)
         msg = t('volume.set', lang, {'level': level})
         if is_inter:
             return await ctx.response.send_message(msg)
@@ -419,19 +419,17 @@ class Music(commands.Cog):
         guild = ctx.guild
         lang = await self._get_lang(guild)
 
-        voice_client = guild.voice_client
         player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
 
-        if not voice_client and not player:
+        if not player:
             msg = t('errors.notConnected', lang)
             if is_inter:
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        if player:
-            player.stop()
-        if voice_client and voice_client.is_connected():
-            await voice_client.disconnect()
+        await player.stop()
+        if player._wl_player.connected:
+            await player._wl_player.disconnect()
         self.bot.queues.pop(str(guild.id), None)
 
         msg = t('leave.left', lang)
@@ -473,7 +471,7 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        player.set_filter(name)
+        await player.set_filter(name)
         msg = t('filter.set', lang, {'name': name})
         if is_inter:
             return await ctx.response.send_message(msg)

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import TYPE_CHECKING
 
 import discord
+import wavelink
 
 from .player import MusicPlayer
 from .track import Track
@@ -21,16 +21,14 @@ async def get_or_create_player(
 ) -> MusicPlayer:
     guild_id = str(guild.id)
     if guild_id in bot.queues:
-        return bot.queues[guild_id]
+        existing: MusicPlayer = bot.queues[guild_id]
+        # Move to new channel if needed
+        if existing._wl_player.channel and existing._wl_player.channel.id != voice_channel.id:
+            await existing._wl_player.move_to(voice_channel)
+        return existing
 
-    voice_client = guild.voice_client
-    if voice_client and voice_client.is_connected():
-        if voice_client.channel.id != voice_channel.id:
-            await voice_client.move_to(voice_channel)
-    else:
-        voice_client = await voice_channel.connect(self_deaf=True)
-
-    player = MusicPlayer(guild, voice_client, text_channel, bot)
+    wl_player: wavelink.Player = await voice_channel.connect(cls=wavelink.Player, self_deaf=True)
+    player = MusicPlayer(guild, wl_player, text_channel, bot)
     bot.queues[guild_id] = player
     return player
 
@@ -39,88 +37,26 @@ async def resolve_tracks(query: str, requested_by: str | None = None) -> list[Tr
     if re.search(r'open\.spotify\.com/(track|album|playlist)/', query):
         return await _resolve_spotify(query, requested_by)
 
-    if re.search(r'youtube\.com/playlist\?list=|[?&]list=', query):
-        return await _resolve_youtube_playlist(query, requested_by)
-
-    return await _resolve_youtube(query, requested_by)
+    return await _resolve_via_wavelink(query, requested_by)
 
 
-async def _resolve_youtube(query: str, requested_by: str | None) -> list[Track]:
-    import yt_dlp
-
+async def _resolve_via_wavelink(query: str, requested_by: str | None) -> list[Track]:
     is_url = query.startswith('http://') or query.startswith('https://')
-    target = query if is_url else f'ytsearch:{query}'
-
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True,
-        'add_header': ['referer:youtube.com', 'user-agent:googlebot'],
-    }
-
-    loop = asyncio.get_event_loop()
-
-    def _extract():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(target, download=False)
+    search_query = query if is_url else f'ytsearch:{query}'
 
     try:
-        info = await loop.run_in_executor(None, _extract)
+        results: wavelink.Search = await wavelink.Playable.search(search_query)
     except Exception as e:
         raise RuntimeError(f'Could not find: {query} — {e}') from e
 
-    if 'entries' in info:
-        entry = info['entries'][0] if info['entries'] else None
-        if not entry:
-            raise RuntimeError(f'No results found for: {query}')
-        return [Track.from_ytdlp_info(entry, requested_by)]
+    if not results:
+        raise RuntimeError(f'No results found for: {query}')
 
-    return [Track.from_ytdlp_info(info, requested_by)]
+    if isinstance(results, wavelink.Playlist):
+        return [Track.from_wavelink(t, requested_by) for t in results.tracks[:50]]
 
-
-async def _resolve_youtube_playlist(url: str, requested_by: str | None) -> list[Track]:
-    import yt_dlp
-
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'extract_flat': True,
-        'playlistend': 50,
-    }
-
-    loop = asyncio.get_event_loop()
-
-    def _extract():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
-
-    try:
-        info = await loop.run_in_executor(None, _extract)
-    except Exception as e:
-        raise RuntimeError(f'Failed to load playlist: {e}') from e
-
-    entries = info.get('entries') or [info]
-    tracks = []
-    for e in entries[:50]:
-        video_id = e.get('id')
-        video_url = (
-            e.get('url')
-            or e.get('webpage_url')
-            or (f'https://www.youtube.com/watch?v={video_id}' if video_id else None)
-        )
-        if not video_url:
-            continue
-        thumbnails = e.get('thumbnails') or []
-        thumbnail = e.get('thumbnail') or (thumbnails[0].get('url') if thumbnails else None)
-        tracks.append(Track(
-            title=e.get('title') or 'Unknown',
-            url=video_url,
-            duration=Track.format_duration(e.get('duration')),
-            thumbnail=thumbnail,
-            requested_by=requested_by,
-        ))
-    return tracks
+    # Single track or search result — return only the first match
+    return [Track.from_wavelink(results[0], requested_by)]
 
 
 _spotify_access_token: str | None = None
@@ -209,7 +145,7 @@ async def _resolve_spotify(url: str, requested_by: str | None) -> list[Track]:
     tracks: list[Track] = []
     for name in track_names:
         try:
-            resolved = await _resolve_youtube(name, requested_by)
+            resolved = await _resolve_via_wavelink(name, requested_by)
             tracks.extend(resolved)
         except Exception:
             pass

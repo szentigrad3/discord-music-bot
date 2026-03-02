@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import random
 from typing import TYPE_CHECKING
 
 import discord
+import wavelink
 
 from .track import Track
 
@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
 FILTERS: dict[str, str | None] = {
     'none': None,
-    'nightcore': 'atempo=1.3,asetrate=44100*1.25',
-    'bassboost': 'bass=g=20,dynaudnorm=f=200',
+    'nightcore': 'nightcore',
+    'bassboost': 'bassboost',
 }
 
 
@@ -24,111 +24,104 @@ class RepeatMode:
     ALL = 2
 
 
+def _build_wavelink_filters(filter_name: str) -> wavelink.Filters:
+    filters = wavelink.Filters()
+    if filter_name == 'nightcore':
+        filters.timescale.set(pitch=1.3, speed=1.3, rate=1.0)
+    elif filter_name == 'bassboost':
+        filters.equalizer.set(bands=[
+            {'band': 0, 'gain': 0.25},
+            {'band': 1, 'gain': 0.25},
+            {'band': 2, 'gain': 0.15},
+        ])
+    return filters
+
+
 class MusicPlayer:
     def __init__(
         self,
         guild: discord.Guild,
-        voice_client: discord.VoiceClient,
+        wl_player: wavelink.Player,
         text_channel: discord.abc.Messageable,
         bot: commands.Bot,
     ):
         self.guild = guild
-        self.voice_client = voice_client
+        self._wl_player = wl_player
         self.text_channel = text_channel
         self.bot = bot
 
+        # Store back-reference so the track-end event can locate this wrapper
+        wl_player._music_player = self  # type: ignore[attr-defined]
+
         self.tracks: list[Track] = []
         self.current: Track | None = None
-        self.volume: int = 80
+        self._volume: int = 80
         self.filter: str = 'none'
         self.repeat_mode: int = RepeatMode.OFF
         self.paused: bool = False
-        self._restart_requested: bool = False
 
-    def _ffmpeg_options(self) -> dict:
-        filter_str = FILTERS[self.filter]
-        volume_filter = f'volume={self.volume / 100}'
-        filter_chain = f'{filter_str},{volume_filter}' if filter_str else volume_filter
-        return {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': f'-af {filter_chain} -vn',
-        }
+    @property
+    def volume(self) -> int:
+        return self._volume
 
-    async def _get_stream_url(self, url: str) -> str:
-        import yt_dlp
+    @volume.setter
+    def volume(self, val: int) -> None:
+        self._volume = max(1, min(100, val))
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
-        }
+    # ------------------------------------------------------------------ playback
 
-        loop = asyncio.get_event_loop()
-
-        def _extract():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if 'entries' in info:
-                    info = info['entries'][0]
-                # Prefer a format with only audio
-                formats = info.get('formats', [info])
-                audio_formats = [
-                    f for f in formats
-                    if f.get('acodec') != 'none' and f.get('vcodec') in ('none', None)
-                ]
-                if audio_formats:
-                    return audio_formats[-1]['url']
-                return info.get('url', url)
-
-        return await loop.run_in_executor(None, _extract)
+    async def _resolve_wl_track(self, track: Track) -> wavelink.Playable | None:
+        """Resolve a Track URL to a wavelink.Playable for playback."""
+        try:
+            results: wavelink.Search = await wavelink.Playable.search(track.url)
+            if isinstance(results, wavelink.Playlist):
+                return results.tracks[0] if results.tracks else None
+            return results[0] if results else None
+        except Exception as e:
+            print(f'[Player:{self.guild.id}] Failed to resolve "{track.title}": {e}')
+            return None
 
     async def _play(self, track: Track) -> None:
         self.current = track
-        try:
-            stream_url = await self._get_stream_url(track.url)
-            ffmpeg_opts = self._ffmpeg_options()
-            source = discord.FFmpegPCMAudio(stream_url, **ffmpeg_opts)
-
-            def after_playing(error: Exception | None) -> None:
-                if error:
-                    print(f'[Player:{self.guild.id}] Audio error: {error}')
-                asyncio.run_coroutine_threadsafe(self._on_track_end(), self.bot.loop)
-
-            if self.voice_client and self.voice_client.is_connected():
-                self.voice_client.play(source, after=after_playing)
-
-            if self.text_channel:
-                try:
-                    from bot.db import get_guild_settings
-                    settings = await get_guild_settings(str(self.guild.id))
-                    if settings and settings.get('announceNowPlaying'):
-                        embed = discord.Embed(
-                            title='🎵 Now Playing',
-                            description=f'**[{track.title}]({track.url})**',
-                            color=0x5865F2,
-                        )
-                        embed.add_field(name='Duration', value=track.duration, inline=True)
-                        embed.add_field(
-                            name='Requested by',
-                            value=track.requested_by or 'Unknown',
-                            inline=True,
-                        )
-                        if track.thumbnail:
-                            embed.set_thumbnail(url=track.thumbnail)
-                        await self.text_channel.send(embed=embed)
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f'[Player:{self.guild.id}] Failed to play "{track.title}": {e}')
-            asyncio.run_coroutine_threadsafe(self._on_track_end(), self.bot.loop)
-
-    async def _on_track_end(self) -> None:
-        if self._restart_requested:
-            self._restart_requested = False
-            await self._play(self.current)
+        wl_track = await self._resolve_wl_track(track)
+        if not wl_track:
+            print(f'[Player:{self.guild.id}] Could not resolve "{track.title}", skipping.')
+            await self._on_track_end()
             return
 
+        try:
+            await self._wl_player.play(wl_track, volume=self._volume)
+            # Apply active filter
+            if self.filter != 'none':
+                await self._wl_player.set_filters(_build_wavelink_filters(self.filter))
+        except Exception as e:
+            print(f'[Player:{self.guild.id}] Failed to play "{track.title}": {e}')
+            await self._on_track_end()
+            return
+
+        if self.text_channel:
+            try:
+                from bot.db import get_guild_settings
+                settings = await get_guild_settings(str(self.guild.id))
+                if settings and settings.get('announceNowPlaying'):
+                    embed = discord.Embed(
+                        title='🎵 Now Playing',
+                        description=f'**[{track.title}]({track.url})**',
+                        color=0x5865F2,
+                    )
+                    embed.add_field(name='Duration', value=track.duration, inline=True)
+                    embed.add_field(
+                        name='Requested by',
+                        value=track.requested_by or 'Unknown',
+                        inline=True,
+                    )
+                    if track.thumbnail:
+                        embed.set_thumbnail(url=track.thumbnail)
+                    await self.text_channel.send(embed=embed)
+            except Exception:
+                pass
+
+    async def _on_track_end(self) -> None:
         if self.repeat_mode == RepeatMode.ONE and self.current:
             await self._play(self.current)
             return
@@ -144,12 +137,10 @@ class MusicPlayer:
         else:
             await self._cleanup()
 
+    # ------------------------------------------------------------------ queue ops
+
     async def enqueue(self, track: Track) -> None:
-        if (
-            not self.voice_client.is_playing()
-            and not self.voice_client.is_paused()
-            and not self.current
-        ):
+        if not self._wl_player.playing and not self._wl_player.paused and not self.current:
             await self._play(track)
         else:
             self.tracks.append(track)
@@ -157,54 +148,42 @@ class MusicPlayer:
     async def enqueue_many(self, tracks: list[Track]) -> None:
         if not tracks:
             return
-        if (
-            not self.voice_client.is_playing()
-            and not self.voice_client.is_paused()
-            and not self.current
-        ):
+        if not self._wl_player.playing and not self._wl_player.paused and not self.current:
             first, *rest = tracks
             self.tracks.extend(rest)
             await self._play(first)
         else:
             self.tracks.extend(tracks)
 
-    def skip(self) -> None:
-        if self.voice_client and (self.voice_client.is_playing() or self.voice_client.is_paused()):
-            self.voice_client.stop()
+    # ------------------------------------------------------------------ controls
 
-    def pause(self) -> None:
-        if self.voice_client and self.voice_client.is_playing():
-            self.voice_client.pause()
-            self.paused = True
+    async def skip(self) -> None:
+        await self._wl_player.stop()
 
-    def resume(self) -> None:
-        if self.voice_client and self.voice_client.is_paused():
-            self.voice_client.resume()
-            self.paused = False
+    async def pause(self) -> None:
+        await self._wl_player.pause(True)
+        self.paused = True
 
-    def stop(self) -> None:
+    async def resume(self) -> None:
+        await self._wl_player.pause(False)
+        self.paused = False
+
+    async def stop(self) -> None:
         self.tracks = []
         self.repeat_mode = RepeatMode.OFF
-        if self.voice_client and (self.voice_client.is_playing() or self.voice_client.is_paused()):
-            self.voice_client.stop()
+        self.current = None
+        await self._wl_player.stop()
 
-    def set_volume(self, vol: int) -> None:
-        self.volume = max(1, min(100, vol))
-        if self.current:
-            self._restart_current()
+    async def set_volume(self, vol: int) -> None:
+        self.volume = vol
+        await self._wl_player.set_volume(self._volume)
 
-    def set_filter(self, filter_name: str) -> bool:
+    async def set_filter(self, filter_name: str) -> bool:
         if filter_name not in FILTERS:
             return False
         self.filter = filter_name
-        if self.current:
-            self._restart_current()
+        await self._wl_player.set_filters(_build_wavelink_filters(filter_name))
         return True
-
-    def _restart_current(self) -> None:
-        if self.current and (self.voice_client.is_playing() or self.voice_client.is_paused()):
-            self._restart_requested = True
-            self.voice_client.stop()
 
     def shuffle(self) -> None:
         random.shuffle(self.tracks)
@@ -212,8 +191,10 @@ class MusicPlayer:
     def set_repeat(self, mode: int) -> None:
         self.repeat_mode = mode
 
+    # ------------------------------------------------------------------ cleanup
+
     async def _cleanup(self) -> None:
-        if self.voice_client and self.voice_client.is_connected():
-            await self.voice_client.disconnect()
+        if self._wl_player and self._wl_player.connected:
+            await self._wl_player.disconnect()
         guild_id = str(self.guild.id)
         self.bot.queues.pop(guild_id, None)

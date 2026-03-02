@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import wavelink
+
 
 class Track:
     """Represents a single music track."""
@@ -19,11 +24,11 @@ class Track:
         self.requested_by = requested_by
 
     @staticmethod
-    def format_duration(seconds) -> str:
-        if not seconds:
+    def format_duration(milliseconds) -> str:
+        if not milliseconds:
             return 'Live'
         try:
-            seconds = float(seconds)
+            seconds = float(milliseconds) / 1000
         except (TypeError, ValueError):
             return 'Live'
         h = int(seconds // 3600)
@@ -34,13 +39,11 @@ class Track:
         return f'{m}:{s:02d}'
 
     @classmethod
-    def from_ytdlp_info(cls, info: dict, requested_by: str | None = None) -> 'Track':
-        thumbnails = info.get('thumbnails') or []
-        thumbnail = info.get('thumbnail') or (thumbnails[0].get('url') if thumbnails else None)
+    def from_wavelink(cls, track: wavelink.Playable, requested_by: str | None = None) -> 'Track':
         return cls(
-            title=info.get('title') or 'Unknown Title',
-            url=info.get('webpage_url') or info.get('url') or '',
-            duration=cls.format_duration(info.get('duration')),
-            thumbnail=thumbnail,
+            title=track.title or 'Unknown Title',
+            url=track.uri or '',
+            duration=cls.format_duration(track.length),
+            thumbnail=track.artwork,
             requested_by=requested_by,
         )
