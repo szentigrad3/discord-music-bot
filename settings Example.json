@@ -1,0 +1,20 @@
+{
+    "token": "your_discord_bot_token_here",
+    "client_id": "your_discord_client_id_here",
+    "client_secret": "your_discord_client_secret_here",
+    "callback_url": "http://localhost:3000/auth/discord/callback",
+
+    "spotify_client_id": "",
+    "spotify_client_secret": "",
+
+    "session_secret": "change_this_to_a_random_secret_string",
+    "dashboard_port": 3000,
+
+    "database_url": "file:./data/bot.db",
+
+    "lavalink": {
+        "host": "lavalink",
+        "port": 2333,
+        "password": "youshallnotpass"
+    }
+}

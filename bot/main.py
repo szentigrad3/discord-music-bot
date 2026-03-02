@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import threading
 
 import discord
 import wavelink
 from discord.ext import commands
-from dotenv import load_dotenv
 
 from bot.db import get_guild_settings, init_db
-
-load_dotenv()
+from bot.settings import settings
 
 
 async def _get_prefix(bot: commands.Bot, message: discord.Message) -> str:
     if not message.guild:
         return '!'
     try:
-        settings = await get_guild_settings(str(message.guild.id))
-        return settings.get('prefix', '!')
+        guild_settings = await get_guild_settings(str(message.guild.id))
+        return guild_settings.get('prefix', '!')
     except Exception:
         return '!'
 
@@ -127,28 +125,39 @@ async def on_command_error(ctx: commands.Context, error: Exception) -> None:
         pass
 
 
+def _start_dashboard() -> None:
+    if not settings.session_secret:
+        print('⚠️  Dashboard not started: session_secret is not set in settings.json')
+        return
+    from bot.dashboard.app import app as flask_app
+    port = settings.dashboard_port
+    print(f'🌐 Dashboard running at http://localhost:{port}')
+    try:
+        flask_app.run(host='0.0.0.0', port=port)
+    except Exception as exc:
+        print(f'[dashboard] Failed to start: {exc}')
+
+
 async def main() -> None:
     await init_db()
+
+    dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
+    dashboard_thread.start()
 
     async with bot:
         await bot.load_extension('bot.cogs.music')
         await bot.load_extension('bot.cogs.utility')
 
-        token = os.getenv('DISCORD_TOKEN')
-        if not token:
-            raise RuntimeError('DISCORD_TOKEN environment variable is not set.')
-
-        lavalink_host = os.getenv('LAVALINK_HOST', 'lavalink')
-        lavalink_port = os.getenv('LAVALINK_PORT', '2333')
-        lavalink_password = os.getenv('LAVALINK_PASSWORD', 'youshallnotpass')
+        if not settings.token:
+            raise RuntimeError('token is not set in settings.json')
 
         node = wavelink.Node(
-            uri=f'http://{lavalink_host}:{lavalink_port}',
-            password=lavalink_password,
+            uri=f'http://{settings.lavalink_host}:{settings.lavalink_port}',
+            password=settings.lavalink_password,
         )
         await wavelink.Pool.connect(nodes=[node], client=bot, cache_capacity=100)
 
-        await bot.start(token)
+        await bot.start(settings.token)
 
 
 if __name__ == '__main__':

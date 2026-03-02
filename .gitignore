@@ -9,6 +9,7 @@ build/
 .venv/
 venv/
 .env
+settings.json
 *.db
 *.db-journal
 data/sfx/*.mp3
