@@ -2,30 +2,43 @@ import { joinVoiceChannel } from '@discordjs/voice';
 import { MusicPlayer } from './Player.js';
 import { Track } from './Track.js';
 import ytDlpExec from 'yt-dlp-exec';
-import SpotifyWebApi from 'spotify-web-api-node';
 
-let spotifyApi = null;
+let spotifyAccessToken = null;
 let spotifyTokenExpiry = 0;
-
-if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
-  spotifyApi = new SpotifyWebApi({
-    clientId: process.env.SPOTIFY_CLIENT_ID,
-    clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-  });
-}
+const spotifyEnabled = !!(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET);
 
 async function ensureSpotifyToken() {
-  if (!spotifyApi) return false;
+  if (!spotifyEnabled) return false;
   if (Date.now() < spotifyTokenExpiry) return true;
   try {
-    const data = await spotifyApi.clientCredentialsGrant();
-    spotifyApi.setAccessToken(data.body.access_token);
-    spotifyTokenExpiry = Date.now() + (data.body.expires_in - 60) * 1000;
+    const credentials = Buffer.from(
+      `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`,
+    ).toString('base64');
+    const res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+    });
+    if (!res.ok) throw new Error(`Spotify token request failed: ${res.status}`);
+    const data = await res.json();
+    spotifyAccessToken = data.access_token;
+    spotifyTokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
     return true;
   } catch (err) {
     console.warn('[Spotify] Failed to get token:', err.message);
     return false;
   }
+}
+
+async function spotifyGet(path) {
+  const res = await fetch(`https://api.spotify.com/v1${path}`, {
+    headers: { Authorization: `Bearer ${spotifyAccessToken}` },
+  });
+  if (!res.ok) throw new Error(`Spotify API error: ${res.status} ${res.statusText} (${path})`);
+  return res.json();
 }
 
 /**
@@ -133,17 +146,16 @@ async function resolveSpotify(url, requestedBy) {
   let trackNames = [];
 
   if (trackMatch) {
-    const data = await spotifyApi.getTrack(trackMatch[1]);
-    const t = data.body;
+    const t = await spotifyGet(`/tracks/${trackMatch[1]}`);
     trackNames.push(`${t.artists[0].name} ${t.name}`);
   } else if (albumMatch) {
-    const data = await spotifyApi.getAlbumTracks(albumMatch[1], { limit: 50 });
-    for (const t of data.body.items.slice(0, 50)) {
+    const data = await spotifyGet(`/albums/${albumMatch[1]}/tracks?limit=50`);
+    for (const t of data.items.slice(0, 50)) {
       trackNames.push(`${t.artists[0].name} ${t.name}`);
     }
   } else if (playlistMatch) {
-    const data = await spotifyApi.getPlaylistTracks(playlistMatch[1], { limit: 50 });
-    for (const item of data.body.items.slice(0, 50)) {
+    const data = await spotifyGet(`/playlists/${playlistMatch[1]}/tracks?limit=50`);
+    for (const item of data.items.slice(0, 50)) {
       if (item.track) trackNames.push(`${item.track.artists[0].name} ${item.track.name}`);
     }
   } else {
