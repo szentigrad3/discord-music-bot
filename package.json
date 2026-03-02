@@ -10,7 +10,8 @@
     "deploy": "node src/deploy-commands.js",
     "dashboard": "node src/dashboard/index.js",
     "db:migrate": "prisma migrate deploy",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.0",
@@ -30,5 +31,8 @@
     "prisma": "^5.14.0",
     "sodium-native": "^4.1.1",
     "yt-dlp-exec": "^1.0.2"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
   }
 }
