@@ -59,16 +59,18 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: 'Too many requests, please try again later.',
 });
+app.use(authLimiter);
 
 // ---- CSRF protection ----
 const { generateToken, doubleCsrfProtection } = doubleCsrf({
   getSecret: () => process.env.SESSION_SECRET,
-  cookieName: '__Host-psifi.x-csrf-token',
+  cookieName: process.env.NODE_ENV === 'production' ? '__Host-psifi.x-csrf-token' : 'x-csrf-token',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
   },
 });
+app.use(doubleCsrfProtection);
 
 // ---- Auth middleware ----
 function ensureAuth(req, res, next) {
@@ -77,27 +79,26 @@ function ensureAuth(req, res, next) {
 }
 
 // ---- Routes ----
-app.get('/', authLimiter, (req, res) => {
+app.get('/', (req, res) => {
   if (req.isAuthenticated()) return res.redirect('/dashboard');
   res.render('index', { user: null });
 });
 
-app.get('/auth/discord', authLimiter, passport.authenticate('discord'));
+app.get('/auth/discord', passport.authenticate('discord'));
 
 app.get('/auth/discord/callback',
-  authLimiter,
   passport.authenticate('discord', { failureRedirect: '/' }),
   (req, res) => res.redirect('/dashboard'),
 );
 
-app.get('/auth/logout', authLimiter, (req, res, next) => {
+app.get('/auth/logout', (req, res, next) => {
   req.logout(err => {
     if (err) return next(err);
     res.redirect('/');
   });
 });
 
-app.get('/dashboard', authLimiter, ensureAuth, async (req, res) => {
+app.get('/dashboard', ensureAuth, async (req, res) => {
   const user = req.user;
   // Filter guilds where user has Manage Guild
   const manageableGuilds = (user.guilds ?? []).filter(g => (parseInt(g.permissions) & MANAGE_GUILD) === MANAGE_GUILD);
@@ -120,7 +121,7 @@ app.get('/dashboard', authLimiter, ensureAuth, async (req, res) => {
   res.render('dashboard', { user, guilds: guildsWithPresence });
 });
 
-app.get('/dashboard/:guildId/settings', authLimiter, ensureAuth, async (req, res) => {
+app.get('/dashboard/:guildId/settings', ensureAuth, async (req, res) => {
   const { guildId } = req.params;
   const user = req.user;
 
@@ -134,7 +135,7 @@ app.get('/dashboard/:guildId/settings', authLimiter, ensureAuth, async (req, res
   res.render('settings', { user, guildId, settings, saved: false, csrfToken });
 });
 
-app.post('/dashboard/:guildId/settings', authLimiter, ensureAuth, doubleCsrfProtection, async (req, res) => {
+app.post('/dashboard/:guildId/settings', ensureAuth, async (req, res) => {
   const { guildId } = req.params;
   const user = req.user;
 
