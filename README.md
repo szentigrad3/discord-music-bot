@@ -102,6 +102,83 @@ python -m bot.main
 python -m bot.dashboard.app
 ```
 
+## Running with systemd
+
+You can run the bot (and optionally the dashboard) as a persistent systemd service so it starts automatically on boot and restarts on failure.
+
+### 1. Create the bot service file
+
+Create `/etc/systemd/system/discord-music-bot.service`:
+
+```ini
+[Unit]
+Description=Discord Music Bot
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/discord-music-bot
+ExecStart=/usr/bin/python3 -m bot.main
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Replace `YOUR_USER` with the Linux user that should run the bot and `/path/to/discord-music-bot` with the absolute path to the cloned repository.
+
+### 2. (Optional) Create the dashboard service file
+
+Create `/etc/systemd/system/discord-music-bot-dashboard.service`:
+
+```ini
+[Unit]
+Description=Discord Music Bot Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/discord-music-bot
+ExecStart=/usr/bin/python3 -m bot.dashboard.app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 3. Enable and start the services
+
+```bash
+# Reload systemd so it picks up the new unit files
+sudo systemctl daemon-reload
+
+# Enable the services to start on boot
+sudo systemctl enable discord-music-bot
+sudo systemctl enable discord-music-bot-dashboard   # optional
+
+# Start the services now
+sudo systemctl start discord-music-bot
+sudo systemctl start discord-music-bot-dashboard    # optional
+```
+
+### Useful commands
+
+```bash
+# Check status
+sudo systemctl status discord-music-bot
+
+# View logs
+sudo journalctl -u discord-music-bot -f
+
+# Stop / restart
+sudo systemctl stop discord-music-bot
+sudo systemctl restart discord-music-bot
+```
+
 ## Docker
 
 ```bash
