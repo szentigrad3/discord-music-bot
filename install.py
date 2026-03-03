@@ -331,6 +331,10 @@ class Installer:
 
     # Lavalink Docker image
     LAVALINK_IMAGE = 'ghcr.io/lavalink-devs/lavalink:latest'
+    # Lavalink JAR download URL
+    LAVALINK_JAR_URL = (
+        'https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar'
+    )
 
     def __init__(self) -> None:
         self.cfg_mgr  = ConfigurationManager()
@@ -597,6 +601,11 @@ logging:
             self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
             if enable_lavalink:
                 self._write_lavalink_config(install_dir, config)
+                jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
+                if not jar_dest.exists():
+                    self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
+                else:
+                    print(f"{Colors.GREEN}Lavalink.jar already present, skipping download.{Colors.END}")
 
             # Create data directory
             FileManager.mkdir(install_dir / 'data' / 'sfx')
