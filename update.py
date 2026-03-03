@@ -32,11 +32,22 @@ from io import BytesIO
 import requests
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-__version__ = "v1.0.0"
 
 PYTHON_CMD_NAME = os.path.basename(sys.executable)
-GITHUB_API_URL = "https://api.github.com/repos/szentigrad3/discord-music-bot/releases/latest"
-DOWNLOAD_URL = "https://github.com/szentigrad3/discord-music-bot/archive/"
+VERSION_FILE = os.path.join(ROOT_DIR, "version.txt")
+VERSION_URL = "https://raw.githubusercontent.com/szentigrad3/discord-music-bot/master/version.txt"
+DOWNLOAD_URL = "https://github.com/szentigrad3/discord-music-bot/archive/refs/heads/master.zip"
+
+
+def _read_local_version() -> str:
+    """Read the installed version from version.txt."""
+    if os.path.exists(VERSION_FILE):
+        with open(VERSION_FILE) as f:
+            return f.read().strip()
+    return "unknown"
+
+
+__version__ = _read_local_version()
 
 # Files and directories to preserve across updates.
 IGNORE_FILES = ["settings.json", "data", "logs"]
@@ -50,17 +61,17 @@ class bcolors:
 
 
 def check_version(with_msg: bool = False) -> str:
-    """Check for the latest release on GitHub.
+    """Check for the latest version on the master branch.
 
     Args:
         with_msg: When True, print whether the bot is up-to-date.
 
     Returns:
-        The latest version tag string (e.g. ``"v1.2.0"``).
+        The latest version string read from master's ``version.txt``.
     """
-    response = requests.get(GITHUB_API_URL, timeout=10)
+    response = requests.get(VERSION_URL, timeout=10)
     response.raise_for_status()
-    latest_version = response.json().get("name", __version__)
+    latest_version = response.text.strip()
     if with_msg:
         if latest_version == __version__:
             print(
@@ -77,10 +88,11 @@ def check_version(with_msg: bool = False) -> str:
 
 
 def download_file(version: str | None = None) -> requests.Response:
-    """Download a release zip from GitHub.
+    """Download the master branch zip from GitHub.
 
     Args:
-        version: Tag name to download.  Fetches the latest release when omitted.
+        version: Used only for the progress message.  The master branch is
+            always downloaded regardless of this value.
 
     Returns:
         The HTTP response whose content is the downloaded zip archive.
@@ -88,7 +100,7 @@ def download_file(version: str | None = None) -> requests.Response:
     if version is None:
         version = check_version()
     print(f"Downloading discord-music-bot version: {version}")
-    response = requests.get(DOWNLOAD_URL + version + ".zip", timeout=60)
+    response = requests.get(DOWNLOAD_URL, timeout=60)
     if response.status_code == 404:
         print(f"{bcolors.FAIL}Error: Version not found!{bcolors.ENDC}")
         sys.exit(1)
@@ -133,12 +145,11 @@ def install(response: requests.Response, version: str) -> None:
     zfile = zipfile.ZipFile(BytesIO(response.content))
     zfile.extractall(ROOT_DIR)
 
-    # The extracted folder is named discord-music-bot-<version without "v">.
-    version_without_v = version.lstrip("v")
-    source_dir = os.path.join(ROOT_DIR, f"discord-music-bot-{version_without_v}")
+    # The extracted folder is named discord-music-bot-master.
+    source_dir = os.path.join(ROOT_DIR, "discord-music-bot-master")
 
     if os.path.exists(source_dir):
-        skip_names = set(IGNORE_FILES + [f"discord-music-bot-{version_without_v}"])
+        skip_names = set(IGNORE_FILES + ["discord-music-bot-master"])
         for filename in os.listdir(ROOT_DIR):
             if filename in skip_names:
                 continue
