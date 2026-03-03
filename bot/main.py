@@ -160,12 +160,18 @@ async def _launch_lavalink() -> subprocess.Popen | None:
     logger.info('Starting Lavalink…')
     log_path = jar_path.parent / 'lavalink.log'
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
-    proc = subprocess.Popen(
-        ['java', '-jar', str(jar_path)],
-        cwd=str(jar_path.parent),
-        stdout=log_file,
-        stderr=log_file,
-    )
+    try:
+        proc = subprocess.Popen(
+            ['java', '-jar', str(jar_path)],
+            cwd=str(jar_path.parent),
+            stdout=log_file,
+            stderr=log_file,
+        )
+    except FileNotFoundError:
+        logger.warning('java not found, skipping Lavalink auto-start')
+        return None
+    finally:
+        log_file.close()
     return proc
 
 
