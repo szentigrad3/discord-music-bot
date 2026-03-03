@@ -136,6 +136,19 @@ def _is_port_open(host: str, port: int) -> bool:
         return False
 
 
+async def _wait_for_lavalink(timeout: int = 60) -> bool:
+    host = settings.lavalink_host
+    port = settings.lavalink_port
+    print(f'⏳  Waiting for Lavalink at {host}:{port}…')
+    for _ in range(timeout):
+        if _is_port_open(host, port):
+            print('✅  Lavalink is ready')
+            return True
+        await asyncio.sleep(1)
+    print(f'⚠️  Lavalink at {host}:{port} did not become ready within {timeout} seconds')
+    return False
+
+
 async def _launch_lavalink() -> subprocess.Popen | None:
     jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
     if not jar_path.exists():
@@ -150,12 +163,6 @@ async def _launch_lavalink() -> subprocess.Popen | None:
         stdout=log_file,
         stderr=log_file,
     )
-    for _ in range(60):
-        if _is_port_open('127.0.0.1', settings.lavalink_port):
-            print('✅  Lavalink is ready')
-            return proc
-        await asyncio.sleep(1)
-    print('⚠️  Lavalink did not become ready within 60 seconds')
     return proc
 
 
@@ -176,6 +183,13 @@ async def main() -> None:
     await init_db()
 
     lavalink_proc = await _launch_lavalink()
+    if not await _wait_for_lavalink():
+        if lavalink_proc is not None:
+            lavalink_proc.terminate()
+        raise RuntimeError(
+            f'Lavalink did not become ready at '
+            f'{settings.lavalink_host}:{settings.lavalink_port}'
+        )
 
     dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
     dashboard_thread.start()
