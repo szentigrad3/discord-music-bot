@@ -451,7 +451,7 @@ class Installer:
             'log_level': 'INFO',
             '_log_level_note': 'Set to DEBUG to capture all internal activity (also overridable via LOG_LEVEL env var)',
             'lavalink': {
-                'host': 'lavalink',
+                'host': 'localhost',
                 'port': int(config.get('lavalink_port', 2333)),
                 'password': config.get('lavalink_password', 'youshallnotpass'),
             },
