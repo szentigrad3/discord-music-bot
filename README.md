@@ -181,14 +181,68 @@ sudo systemctl restart discord-music-bot
 
 ## Docker
 
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) ≥ 20.10
+- [Docker Compose](https://docs.docker.com/compose/install/) v2 (`docker compose` — note: no hyphen)
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/szentigrad3/discord-music-bot.git
+cd discord-music-bot
+```
+
+### 2. Configure settings
+
 ```bash
 cp 'settings Example.json' settings.json
-# Edit settings.json
+```
 
+Open `settings.json` and fill in the required values (see the [Configuration](#configuration-settingsjson) table for details). At minimum you need:
+
+- `token` — your Discord bot token
+- `client_id` — your Discord application client ID
+- `lavalink.host` — leave as `lavalink` (the Compose service name)
+
+### 3. Start all services
+
+```bash
 docker compose up -d
 ```
 
-The dashboard will be available at `http://localhost:3000`.
+This builds the bot image, starts the Lavalink server, and launches the bot in the background. The dashboard will be available at `http://localhost:3000`.
+
+### 4. View logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Bot only
+docker compose logs -f bot
+
+# Lavalink only
+docker compose logs -f lavalink
+```
+
+### 5. Stop / restart
+
+```bash
+# Stop all services (containers removed, data volumes kept)
+docker compose down
+
+# Restart a single service
+docker compose restart bot
+```
+
+### 6. Rebuild after code changes
+
+If you modify source files or `requirements.txt`, rebuild the bot image before starting:
+
+```bash
+docker compose up -d --build
+```
 
 ## Commands
 
