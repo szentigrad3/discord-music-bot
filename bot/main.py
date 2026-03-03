@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import socket
 import threading
 from pathlib import Path
@@ -192,7 +193,9 @@ async def main() -> None:
     setup_logging(level=settings.log_level)
     await init_db()
 
-    lavalink_proc = await _launch_lavalink()
+    lavalink_proc = None
+    if os.environ.get('BOT_IN_DOCKER', '').lower() != 'true':
+        lavalink_proc = await _launch_lavalink()
     if not await _wait_for_lavalink():
         if lavalink_proc is not None:
             lavalink_proc.terminate()
