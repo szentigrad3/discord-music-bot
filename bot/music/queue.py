@@ -4,9 +4,10 @@ import re
 from typing import TYPE_CHECKING
 
 import discord
-import wavelink
 
 from bot.logger import get_logger
+from bot.voicelink import NodePool, Player as VoicelinkPlayer, Playlist as VoicelinkPlaylist
+from bot.voicelink.enums import SearchType
 from .player import MusicPlayer
 from .track import Track
 
@@ -26,12 +27,14 @@ async def get_or_create_player(
     if guild_id in bot.queues:
         existing: MusicPlayer = bot.queues[guild_id]
         # Move to new channel if needed
-        if existing._wl_player.channel and existing._wl_player.channel.id != voice_channel.id:
-            await existing._wl_player.move_to(voice_channel)
+        if existing._vl_player.channel and existing._vl_player.channel.id != voice_channel.id:
+            await existing._vl_player.move_to(voice_channel)
         return existing
 
-    wl_player: wavelink.Player = await voice_channel.connect(cls=wavelink.Player, self_deaf=True)
-    player = MusicPlayer(guild, wl_player, text_channel, bot)
+    vl_player: VoicelinkPlayer = await voice_channel.connect(
+        cls=VoicelinkPlayer(bot, voice_channel), self_deaf=True
+    )
+    player = MusicPlayer(guild, vl_player, text_channel, bot)
     bot.queues[guild_id] = player
     return player
 
@@ -40,26 +43,27 @@ async def resolve_tracks(query: str, requested_by: str | None = None) -> list[Tr
     if re.search(r'open\.spotify\.com/(track|album|playlist)/', query):
         return await _resolve_spotify(query, requested_by)
 
-    return await _resolve_via_wavelink(query, requested_by)
+    return await _resolve_via_voicelink(query, requested_by)
 
 
-async def _resolve_via_wavelink(query: str, requested_by: str | None) -> list[Track]:
+async def _resolve_via_voicelink(query: str, requested_by: str | None) -> list[Track]:
     is_url = query.startswith('http://') or query.startswith('https://')
     search_query = query if is_url else f'ytsearch:{query}'
 
     try:
-        results: wavelink.Search = await wavelink.Playable.search(search_query)
+        node = NodePool.get_node()
+        results = await node.get_tracks(search_query, requester=None, search_type=SearchType.YOUTUBE)
     except Exception as e:
         raise RuntimeError(f'Could not find: {query} — {e}') from e
 
     if not results:
         raise RuntimeError(f'No results found for: {query}')
 
-    if isinstance(results, wavelink.Playlist):
-        return [Track.from_wavelink(t, requested_by) for t in results.tracks[:50]]
+    if isinstance(results, VoicelinkPlaylist):
+        return [Track.from_voicelink(t, requested_by) for t in results.tracks[:50]]
 
     # Single track or search result — return only the first match
-    return [Track.from_wavelink(results[0], requested_by)]
+    return [Track.from_voicelink(results[0], requested_by)]
 
 
 _spotify_access_token: str | None = None
@@ -149,7 +153,7 @@ async def _resolve_spotify(url: str, requested_by: str | None) -> list[Track]:
     tracks: list[Track] = []
     for name in track_names:
         try:
-            resolved = await _resolve_via_wavelink(name, requested_by)
+            resolved = await _resolve_via_voicelink(name, requested_by)
             tracks.extend(resolved)
         except Exception:
             pass

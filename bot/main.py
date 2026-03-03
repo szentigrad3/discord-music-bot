@@ -8,7 +8,7 @@ from pathlib import Path
 
 import aiohttp
 import discord
-import wavelink
+from bot.voicelink import NodePool
 from discord.ext import commands
 
 from bot.db import get_guild_settings, init_db
@@ -61,21 +61,29 @@ async def on_ready() -> None:
     except Exception as e:
         logger.error('Failed to sync commands: %s', e)
 
+    # Connect to Lavalink via voicelink (requires bot.user to be available)
+    try:
+        if 'MAIN' not in NodePool._nodes:
+            await NodePool.create_node(
+                bot=bot,
+                host=settings.lavalink_host,
+                port=settings.lavalink_port,
+                password=settings.lavalink_password,
+                identifier='MAIN',
+            )
+            logger.info('Lavalink node connected.')
+    except Exception as e:
+        logger.error('Failed to connect to Lavalink node: %s', e)
+
 
 @bot.event
-async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload) -> None:
-    logger.info('Lavalink node connected: %s (resumed=%s)', payload.node.identifier, payload.resumed)
-
-
-@bot.event
-async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload) -> None:
-    wl_player = payload.player
-    music_player = getattr(wl_player, '_music_player', None)
+async def on_voicelink_track_end(player, track, reason: str) -> None:
+    music_player = getattr(player, '_music_player', None)
     if music_player is None:
         return
     # Only advance the queue for "normal" end reasons (finished, loadFailed, etc.)
     # Reason 'replaced' means a new track was explicitly started, so skip
-    if payload.reason == 'replaced':
+    if reason == 'replaced':
         return
     await music_player._on_track_end()
 
@@ -91,8 +99,8 @@ async def on_voice_state_update(
     if not music_player:
         return
 
-    wl_player = music_player._wl_player
-    if not wl_player or not wl_player.connected:
+    wl_player = music_player._vl_player
+    if not wl_player or not wl_player.is_connected:
         return
 
     bot_channel = wl_player.channel
@@ -106,7 +114,7 @@ async def on_voice_state_update(
     await asyncio.sleep(5)
 
     # Re-check after the delay
-    if not wl_player.connected:
+    if not wl_player.is_connected:
         return
     bot_channel = wl_player.channel
     if not bot_channel:
@@ -228,7 +236,7 @@ async def main() -> None:
             )
         logger.warning(
             'Lavalink is not yet reachable at %s:%d — proceeding anyway; '
-            'wavelink will retry the connection automatically.',
+            'voicelink will retry the connection automatically.',
             settings.lavalink_host,
             settings.lavalink_port,
         )
@@ -249,12 +257,6 @@ async def main() -> None:
 
             if not settings.token:
                 raise RuntimeError('token is not set in settings.json')
-
-            node = wavelink.Node(
-                uri=f'http://{settings.lavalink_host}:{settings.lavalink_port}',
-                password=settings.lavalink_password,
-            )
-            await wavelink.Pool.connect(nodes=[node], client=bot, cache_capacity=100)
 
             await bot.start(settings.token)
     finally:
