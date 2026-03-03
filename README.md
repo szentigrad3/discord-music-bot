@@ -77,7 +77,7 @@ Edit `settings.json` and fill in:
 - `callback_url` — OAuth2 callback URL (e.g. `http://localhost:3000/auth/discord/callback`)
 - `spotify_client_id` / `spotify_client_secret` — from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (optional)
 - `session_secret` — a random secret string for session cookies
-- `lavalink.host` — Lavalink server host (default: `lavalink`)
+- `lavalink.host` — Lavalink server host (default: `localhost`; auto-set to `lavalink` inside Docker)
 - `lavalink.port` — Lavalink server port (default: `2333`)
 - `lavalink.password` — Lavalink server password (default: `youshallnotpass`)
 
@@ -203,7 +203,7 @@ Open `settings.json` and fill in the required values (see the [Configuration](#c
 
 - `token` — your Discord bot token
 - `client_id` — your Discord application client ID
-- `lavalink.host` — leave as `lavalink` (the Compose service name)
+- `lavalink.host` — leave as `localhost` (auto-resolved to the Compose service name inside Docker)
 
 ### 3. Start all services
 
@@ -350,9 +350,10 @@ Place `.mp3` files in `data/sfx/` and use `/sfx <name>` (without extension).
 | `session_secret` | Dashboard | Flask session secret |
 | `dashboard_port` | Optional | Dashboard port (default: `3000`) |
 | `database_url` | ✅ | SQLite file path (e.g. `file:./data/bot.db`) |
-| `lavalink.host` | ✅ | Lavalink server host (default: `lavalink`) |
+| `lavalink.host` | ✅ | Lavalink server host (default: `localhost`; auto-set to `lavalink` inside Docker) |
 | `lavalink.port` | Optional | Lavalink server port (default: `2333`) |
 | `lavalink.password` | Optional | Lavalink server password (default: `youshallnotpass`) |
+| `log_level` | Optional | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (default: `INFO`; overridable via `LOG_LEVEL` env var) |
 
 ## License
 
