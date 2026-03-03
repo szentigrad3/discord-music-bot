@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict
 
@@ -69,9 +70,17 @@ class Settings:
 
 _settings_file = ROOT_DIR / 'settings.json'
 if not _settings_file.exists():
-    raise Exception(
-        "Settings file not found! "
-        "Please copy 'settings Example.json' to 'settings.json' and fill in your values."
-    )
+    _example_file = ROOT_DIR / 'settings Example.json'
+    if _example_file.exists():
+        shutil.copy2(_example_file, _settings_file)
+        print(
+            "settings.json created from 'settings Example.json'. "
+            "Please update it with your actual values before running the bot."
+        )
+    else:
+        raise Exception(
+            "Settings file not found! "
+            "Please create 'settings.json' and fill in your values."
+        )
 
 settings = Settings(open_json('settings.json'))
