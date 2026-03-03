@@ -138,19 +138,6 @@ def _is_port_open(host: str, port: int) -> bool:
         return False
 
 
-async def _wait_for_lavalink(timeout: int = 60) -> bool:
-    host = settings.lavalink_host
-    port = settings.lavalink_port
-    logger.info('Waiting for Lavalink at %s:%d…', host, port)
-    for _ in range(timeout):
-        if _is_port_open(host, port):
-            logger.info('Lavalink is ready')
-            return True
-        await asyncio.sleep(1)
-    logger.warning('Lavalink at %s:%d did not become ready within %d seconds', host, port, timeout)
-    return False
-
-
 async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
     if not jar_path.exists():
@@ -172,6 +159,19 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     finally:
         log_file.close()
     return proc
+
+
+async def _wait_for_lavalink(timeout: int = 60) -> bool:
+    host = settings.lavalink_host
+    port = settings.lavalink_port
+    logger.info('Waiting for Lavalink at %s:%d…', host, port)
+    for _ in range(timeout):
+        if _is_port_open(host, port):
+            logger.info('Lavalink is ready')
+            return True
+        await asyncio.sleep(1)
+    logger.warning('Lavalink at %s:%d did not become ready within %d seconds', host, port, timeout)
+    return False
 
 
 def _start_dashboard() -> None:
