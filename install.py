@@ -352,6 +352,20 @@ class Installer:
         print(f"{Colors.BLUE}Architecture: {platform.machine()}{Colors.END}")
         print('=' * 60)
 
+    # ------------------------------------------------------------------ pip requirements
+
+    @staticmethod
+    def _install_requirements(install_dir: Path) -> None:
+        req_file = install_dir / 'requirements.txt'
+        if not req_file.exists():
+            return
+        print(f"{Colors.BLUE}Installing Python dependencies from requirements.txt…{Colors.END}")
+        subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', '-r', str(req_file)],
+            check=True,
+        )
+        print(f"{Colors.GREEN}✅  Python dependencies installed.{Colors.END}")
+
     # ------------------------------------------------------------------ docker-compose writer
 
     @staticmethod
@@ -739,6 +753,10 @@ logging:
             # Create data directory
             FileManager.mkdir(install_dir / 'data' / 'sfx')
             print(f"{Colors.GREEN}Created data directories.{Colors.END}")
+
+            # Install Python dependencies
+            self.cfg_mgr._section("📦  INSTALLING PYTHON DEPENDENCIES", Colors.BLUE)
+            self._install_requirements(install_dir)
 
             # Start services
             self.cfg_mgr._section("🚀  STARTING SERVICES", Colors.GREEN)
