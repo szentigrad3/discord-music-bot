@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import socket
+import subprocess
 import threading
 from pathlib import Path
 
@@ -126,6 +128,37 @@ async def on_command_error(ctx: commands.Context, error: Exception) -> None:
         pass
 
 
+def _is_port_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+async def _launch_lavalink() -> subprocess.Popen | None:
+    jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
+    if not jar_path.exists():
+        print('⚠️  lavalink/Lavalink.jar not found, skipping Lavalink auto-start')
+        return None
+    print('🎵  Starting Lavalink…')
+    log_path = jar_path.parent / 'lavalink.log'
+    log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
+    proc = subprocess.Popen(
+        ['java', '-jar', str(jar_path)],
+        cwd=str(jar_path.parent),
+        stdout=log_file,
+        stderr=log_file,
+    )
+    for _ in range(60):
+        if _is_port_open('127.0.0.1', settings.lavalink_port):
+            print('✅  Lavalink is ready')
+            return proc
+        await asyncio.sleep(1)
+    print('⚠️  Lavalink did not become ready within 60 seconds')
+    return proc
+
+
 def _start_dashboard() -> None:
     if not settings.session_secret:
         print('⚠️  Dashboard not started: session_secret is not set in settings.json')
@@ -142,29 +175,35 @@ def _start_dashboard() -> None:
 async def main() -> None:
     await init_db()
 
+    lavalink_proc = await _launch_lavalink()
+
     dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
     dashboard_thread.start()
 
-    async with bot:
-        cogs_dir = Path(__file__).parent / 'cogs'
-        for cog_file in sorted(cogs_dir.glob('*.py')):
-            if cog_file.stem == '__init__':
-                continue
-            try:
-                await bot.load_extension(f'bot.cogs.{cog_file.stem}')
-            except Exception as e:
-                print(f'⚠️  Failed to load cog {cog_file.stem}: {e}')
+    try:
+        async with bot:
+            cogs_dir = Path(__file__).parent / 'cogs'
+            for cog_file in sorted(cogs_dir.glob('*.py')):
+                if cog_file.stem == '__init__':
+                    continue
+                try:
+                    await bot.load_extension(f'bot.cogs.{cog_file.stem}')
+                except Exception as e:
+                    print(f'⚠️  Failed to load cog {cog_file.stem}: {e}')
 
-        if not settings.token:
-            raise RuntimeError('token is not set in settings.json')
+            if not settings.token:
+                raise RuntimeError('token is not set in settings.json')
 
-        node = wavelink.Node(
-            uri=f'http://{settings.lavalink_host}:{settings.lavalink_port}',
-            password=settings.lavalink_password,
-        )
-        await wavelink.Pool.connect(nodes=[node], client=bot, cache_capacity=100)
+            node = wavelink.Node(
+                uri=f'http://{settings.lavalink_host}:{settings.lavalink_port}',
+                password=settings.lavalink_password,
+            )
+            await wavelink.Pool.connect(nodes=[node], client=bot, cache_capacity=100)
 
-        await bot.start(settings.token)
+            await bot.start(settings.token)
+    finally:
+        if lavalink_proc is not None:
+            lavalink_proc.terminate()
 
 
 if __name__ == '__main__':
