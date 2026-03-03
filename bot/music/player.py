@@ -4,9 +4,9 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
-import wavelink
 
 from bot.logger import get_logger
+from bot.voicelink import Equalizer, Filters, Player as VoicelinkPlayer, Timescale
 from .track import Track
 
 if TYPE_CHECKING:
@@ -27,34 +27,30 @@ class RepeatMode:
     ALL = 2
 
 
-def _build_wavelink_filters(filter_name: str) -> wavelink.Filters:
-    filters = wavelink.Filters()
+def _build_voicelink_filters(filter_name: str) -> list:
+    """Return a list of voicelink Filter objects for the given filter name."""
     if filter_name == 'nightcore':
-        filters.timescale.set(pitch=1.3, speed=1.3, rate=1.0)
+        return [Timescale.nightcore()]
     elif filter_name == 'bassboost':
-        filters.equalizer.set(bands=[
-            {'band': 0, 'gain': 0.25},
-            {'band': 1, 'gain': 0.25},
-            {'band': 2, 'gain': 0.15},
-        ])
-    return filters
+        return [Equalizer.boost()]
+    return []
 
 
 class MusicPlayer:
     def __init__(
         self,
         guild: discord.Guild,
-        wl_player: wavelink.Player,
+        vl_player: VoicelinkPlayer,
         text_channel: discord.abc.Messageable,
         bot: commands.Bot,
     ):
         self.guild = guild
-        self._wl_player = wl_player
+        self._vl_player = vl_player
         self.text_channel = text_channel
         self.bot = bot
 
         # Store back-reference so the track-end event can locate this wrapper
-        wl_player._music_player = self  # type: ignore[attr-defined]
+        vl_player._music_player = self  # type: ignore[attr-defined]
 
         self.tracks: list[Track] = []
         self.history: list[Track] = []
@@ -77,31 +73,22 @@ class MusicPlayer:
 
     # ------------------------------------------------------------------ playback
 
-    async def _resolve_wl_track(self, track: Track) -> wavelink.Playable | None:
-        """Resolve a Track URL to a wavelink.Playable for playback."""
-        try:
-            results: wavelink.Search = await wavelink.Playable.search(track.url)
-            if isinstance(results, wavelink.Playlist):
-                return results.tracks[0] if results.tracks else None
-            return results[0] if results else None
-        except Exception as e:
-            logger.error('[Player:%s] Failed to resolve "%s": %s', self.guild.id, track.title, e)
-            return None
-
     async def _play(self, track: Track) -> None:
         self.current = track
         self.paused = False
-        wl_track = await self._resolve_wl_track(track)
-        if not wl_track:
-            logger.warning('[Player:%s] Could not resolve "%s", skipping.', self.guild.id, track.title)
+
+        vl_track = track._vl_track
+        if not vl_track:
+            logger.warning('[Player:%s] No voicelink track for "%s", skipping.', self.guild.id, track.title)
             await self._on_track_end()
             return
 
         try:
-            await self._wl_player.play(wl_track, volume=self._volume)
+            await self._vl_player.set_volume(self._volume)
+            await self._vl_player.play(vl_track)
             # Apply active filter
             if self.filter != 'none':
-                await self._wl_player.set_filters(_build_wavelink_filters(self.filter))
+                await self._apply_filters(self.filter)
         except Exception as e:
             logger.error('[Player:%s] Failed to play "%s": %s', self.guild.id, track.title, e)
             await self._on_track_end()
@@ -112,6 +99,12 @@ class MusicPlayer:
                 await self._send_or_update_controller()
             except Exception:
                 pass
+
+    async def _apply_filters(self, filter_name: str) -> None:
+        """Reset filters then apply the named filter set."""
+        await self._vl_player.reset_filters()
+        for f in _build_voicelink_filters(filter_name):
+            await self._vl_player.add_filter(f)
 
     async def _send_or_update_controller(self) -> None:
         """Send a new controller message or update the existing one."""
@@ -157,7 +150,7 @@ class MusicPlayer:
     # ------------------------------------------------------------------ queue ops
 
     async def enqueue(self, track: Track) -> None:
-        if not self._wl_player.playing and not self._wl_player.paused and not self.current:
+        if not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current:
             await self._play(track)
         else:
             self.tracks.append(track)
@@ -165,7 +158,7 @@ class MusicPlayer:
     async def enqueue_many(self, tracks: list[Track]) -> None:
         if not tracks:
             return
-        if not self._wl_player.playing and not self._wl_player.paused and not self.current:
+        if not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current:
             first, *rest = tracks
             self.tracks.extend(rest)
             await self._play(first)
@@ -175,7 +168,7 @@ class MusicPlayer:
     # ------------------------------------------------------------------ controls
 
     async def skip(self) -> None:
-        await self._wl_player.stop()
+        await self._vl_player.stop()
 
     async def back(self) -> None:
         """Go back to the previous track in history."""
@@ -185,32 +178,35 @@ class MusicPlayer:
         # Insert the previous track at the front of the queue so _on_track_end
         # picks it up naturally after stop() fires the track-end event.
         self.tracks.insert(0, prev)
-        await self._wl_player.stop()
+        await self._vl_player.stop()
 
     async def pause(self) -> None:
-        await self._wl_player.pause(True)
+        await self._vl_player.set_pause(True)
         self.paused = True
 
     async def resume(self) -> None:
-        await self._wl_player.pause(False)
+        await self._vl_player.set_pause(False)
         self.paused = False
 
     async def stop(self) -> None:
         self.tracks = []
         self.repeat_mode = RepeatMode.OFF
         self.current = None
-        await self._wl_player.stop()
+        await self._vl_player.stop()
         await self._disable_controller()
 
     async def set_volume(self, vol: int) -> None:
         self.volume = vol
-        await self._wl_player.set_volume(self._volume)
+        await self._vl_player.set_volume(self._volume)
 
     async def set_filter(self, filter_name: str) -> bool:
         if filter_name not in FILTERS:
             return False
         self.filter = filter_name
-        await self._wl_player.set_filters(_build_wavelink_filters(filter_name))
+        if filter_name == 'none':
+            await self._vl_player.reset_filters()
+        else:
+            await self._apply_filters(filter_name)
         return True
 
     def shuffle(self) -> None:
@@ -243,7 +239,7 @@ class MusicPlayer:
 
     async def _cleanup(self) -> None:
         await self._disable_controller()
-        if self._wl_player and self._wl_player.connected:
-            await self._wl_player.disconnect()
+        if self._vl_player and self._vl_player.is_connected:
+            await self._vl_player.disconnect()
         guild_id = str(self.guild.id)
         self.bot.queues.pop(guild_id, None)

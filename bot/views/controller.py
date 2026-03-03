@@ -99,7 +99,7 @@ class PlayerController(discord.ui.View):
         if not isinstance(member, discord.Member):
             return False
         user_channel = getattr(member.voice, 'channel', None)
-        bot_channel = getattr(self.player._wl_player, 'channel', None)
+        bot_channel = getattr(self.player._vl_player, 'channel', None)
         if not user_channel or not bot_channel:
             return False
         return user_channel.id == bot_channel.id

@@ -463,8 +463,8 @@ class Music(commands.Cog):
             return await ctx.reply(msg)
 
         await player.stop()
-        if player._wl_player.connected:
-            await player._wl_player.disconnect()
+        if player._vl_player.is_connected:
+            await player._vl_player.disconnect()
         self.bot.queues.pop(str(guild.id), None)
 
         msg = t('leave.left', lang)
@@ -582,8 +582,10 @@ class Music(commands.Cog):
 
         # Search for results
         try:
-            import wavelink
-            results: wavelink.Search = await wavelink.Playable.search(f'ytsearch:{query}')
+            from bot.voicelink import NodePool, Playlist as VoicelinkPlaylist
+            from bot.voicelink.enums import SearchType
+            node = NodePool.get_node()
+            results = await node.get_tracks(f'ytsearch:{query}', requester=None, search_type=SearchType.YOUTUBE)
         except Exception as err:
             return await edit_reply(f'❌ {err}')
 
@@ -593,7 +595,8 @@ class Music(commands.Cog):
         from bot.music.track import Track
         from bot.views.search import MAX_SEARCH_RESULTS
 
-        tracks = [Track.from_wavelink(r, str(member)) for r in results[:MAX_SEARCH_RESULTS]]
+        vl_tracks = results.tracks if isinstance(results, VoicelinkPlaylist) else results
+        tracks = [Track.from_voicelink(r, str(member)) for r in vl_tracks[:MAX_SEARCH_RESULTS]]
         player = await get_or_create_player(guild, voice_channel, ctx.channel, self.bot)
         settings = await get_guild_settings(str(guild.id))
         player.volume = settings.get('defaultVolume', 80)
