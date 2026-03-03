@@ -8,8 +8,18 @@ from pathlib import Path
 LOG_DIR: Path = Path(__file__).parent.parent / 'logs'
 
 
+class PrintHandler(logging.Handler):
+    """A logging handler that emits records via :func:`print`."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            print(self.format(record))
+        except Exception:  # noqa: BLE001
+            self.handleError(record)
+
+
 def setup_logging(level: int = logging.INFO) -> None:
-    """Configure the root logger with a console handler and a rotating file handler.
+    """Configure the root logger with a console handler, a rotating file handler, and a print handler.
 
     Call this once at startup (before the bot connects) to ensure all loggers
     created with :func:`get_logger` inherit these handlers.
@@ -33,11 +43,15 @@ def setup_logging(level: int = logging.INFO) -> None:
     )
     file_handler.setFormatter(fmt)
 
+    print_handler = PrintHandler()
+    print_handler.setFormatter(fmt)
+
     root = logging.getLogger()
     root.setLevel(level)
     root.handlers.clear()
     root.addHandler(console_handler)
     root.addHandler(file_handler)
+    root.addHandler(print_handler)
 
 
 def get_logger(name: str) -> logging.Logger:
