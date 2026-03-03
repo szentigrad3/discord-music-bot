@@ -184,7 +184,9 @@ class Node:
             try:
                 msg = await self._websocket.receive()
 
-                if msg.type == aiohttp.WSMsgType.CLOSED:
+                # CLOSE and CLOSING carry an integer close code in msg.data, which
+                # json() cannot deserialise.  Treat them the same as CLOSED.
+                if msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING, aiohttp.WSMsgType.CLOSED):
                     self._available = False
                     self._logger.warning(f"WebSocket closed for node [{self._identifier}]")
                     break
@@ -192,6 +194,9 @@ class Node:
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     self._logger.error(f"WebSocket error for node [{self._identifier}]")
                     break
+
+                elif msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
 
                 self._bot.loop.create_task(self._handle_payload(msg.json()))
 
@@ -308,8 +313,13 @@ class Node:
         for player in self.players.copy().values():
             await asyncio.sleep(3)
             try:
-                if player._voice_state:
-                    await player._dispatch_voice_update(player._voice_state)
+                if player.channel:
+                    # Re-trigger Discord's VOICE_STATE_UPDATE + VOICE_SERVER_UPDATE
+                    # so fresh tokens/session IDs are obtained instead of reusing
+                    # potentially stale cached voice state that would cause 400 errors.
+                    await player._guild.change_voice_state(
+                        channel=player.channel, self_deaf=True
+                    )
                 if player.current:
                     await player.play(
                         track=player.current,
