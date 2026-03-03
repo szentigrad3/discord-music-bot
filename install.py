@@ -809,7 +809,6 @@ logging:
                 print(f"{Colors.GREEN}✅  Installation complete. Run these commands from {install_dir}:{Colors.END}")
                 if enable_lavalink:
                     print(f"\n{Colors.YELLOW}⚠  Start Lavalink before the bot:{Colors.END}")
-                    print(f"  java -jar lavalink/Lavalink.jar")
                 print(f"\n  python -m bot.main")
                 if enable_dashboard:
                     print(f"  python -m bot.dashboard.app  # Start the dashboard")
