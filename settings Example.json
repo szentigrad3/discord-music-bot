@@ -14,6 +14,7 @@
 
     "log_level": "INFO",
 
+    "_log_level_note": "Set to DEBUG to capture all internal activity (also overridable via LOG_LEVEL env var)",
     "lavalink": {
         "host": "lavalink",
         "port": 2333,

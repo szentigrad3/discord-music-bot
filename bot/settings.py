@@ -54,8 +54,10 @@ class Settings:
         self.lavalink_port: int = int(lavalink.get('port', 2333))
         self.lavalink_password: str = lavalink.get('password', 'youshallnotpass')
 
-        # Logging
-        _level_str: str = data.get('log_level', 'INFO').upper()
+        # Logging — LOG_LEVEL env var takes precedence over settings.json
+        _level_str: str = (
+            os.environ.get('LOG_LEVEL') or data.get('log_level', 'INFO')
+        ).upper()
         _valid_levels = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
         if _level_str not in _valid_levels:
             raise ValueError(
