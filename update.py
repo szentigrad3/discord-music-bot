@@ -92,7 +92,7 @@ def download_file(version: str | None = None) -> requests.Response:
 
     Args:
         version: Used only for the progress message.  The master branch is
-            always downloaded regardless of this value.
+            only downloaded when the version increases.
 
     Returns:
         The HTTP response whose content is the downloaded zip archive.
@@ -207,8 +207,13 @@ def main() -> None:
 
     elif args.latest:
         version = check_version()
-        response = download_file(version)
-        install(response, version)
+        if version == __version__:
+            print(
+                f"{bcolors.OKGREEN}Your bot is already up-to-date! ({version}){bcolors.ENDC}"
+            )
+        else:
+            response = download_file(version)
+            install(response, version)
 
     else:
         print(
