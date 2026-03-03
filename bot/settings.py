@@ -51,7 +51,8 @@ class Settings:
 
         # Lavalink (nested, like Vocard's "nodes" dict)
         lavalink: Dict[str, Any] = data.get('lavalink', {})
-        self.lavalink_host: str = lavalink.get('host', 'lavalink')
+        _in_docker = os.environ.get('BOT_IN_DOCKER', '').lower() == 'true'
+        self.lavalink_host: str = lavalink.get('host', 'lavalink' if _in_docker else 'localhost')
         self.lavalink_port: int = int(lavalink.get('port', 2333))
         self.lavalink_password: str = lavalink.get('password', 'youshallnotpass')
 
