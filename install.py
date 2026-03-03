@@ -718,15 +718,25 @@ logging:
             Colors.clear_screen()
             self._banner()
 
-            # Check Docker
-            docker_ok, compose_ok = self.docker.check()
-            if not docker_ok:
-                print(f"{Colors.RED}Docker is not installed. Please install Docker and re-run.{Colors.END}")
-                return False
-            if not compose_ok:
-                print(f"{Colors.RED}Docker Compose is not available. Please install it and re-run.{Colors.END}")
-                return False
-            print(f"{Colors.GREEN}✅  Docker and Docker Compose are available.{Colors.END}")
+            # Deployment mode
+            self.cfg_mgr._section("🚀  DEPLOYMENT MODE", Colors.BLUE)
+            print(f"\n{Colors.BLUE}Choose your deployment method:{Colors.END}")
+            print(f"  {Colors.GREEN}Docker{Colors.END}     — runs bot + Lavalink as containers (recommended)")
+            print(f"  {Colors.GREEN}Non-Docker{Colors.END} — runs bot directly with Python\n")
+            use_docker = self.cfg_mgr.yes_no(
+                f"{Colors.YELLOW}Use Docker?{Colors.END}"
+            )
+
+            if use_docker:
+                # Check Docker
+                docker_ok, compose_ok = self.docker.check()
+                if not docker_ok:
+                    print(f"{Colors.RED}Docker is not installed. Please install Docker and re-run.{Colors.END}")
+                    return False
+                if not compose_ok:
+                    print(f"{Colors.RED}Docker Compose is not available. Please install it and re-run.{Colors.END}")
+                    return False
+                print(f"{Colors.GREEN}✅  Docker and Docker Compose are available.{Colors.END}")
 
             # Installation directory
             default_dir = Path(__file__).parent.resolve()
@@ -772,7 +782,8 @@ logging:
             # Write configuration files
             self.cfg_mgr._section("📝  WRITING CONFIGURATION FILES", Colors.BLUE)
             self._write_settings(install_dir, config)
-            self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
+            if use_docker:
+                self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
             if enable_lavalink:
                 self._write_lavalink_config(install_dir, config)
                 jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
@@ -791,8 +802,17 @@ logging:
 
             # Start services
             self.cfg_mgr._section("🚀  STARTING SERVICES", Colors.GREEN)
-            if not self.docker.start(install_dir):
-                return False
+            if use_docker:
+                if not self.docker.start(install_dir):
+                    return False
+            else:
+                print(f"{Colors.GREEN}✅  Installation complete. Run these commands from {install_dir}:{Colors.END}")
+                if enable_lavalink:
+                    print(f"\n{Colors.YELLOW}⚠  Start Lavalink before the bot:{Colors.END}")
+                    print(f"  java -jar lavalink/Lavalink.jar")
+                print(f"\n  python -m bot.main")
+                if enable_dashboard:
+                    print(f"  python -m bot.dashboard.app  # Start the dashboard")
 
             # Success message
             print('\n' + '=' * 60)
@@ -806,11 +826,19 @@ logging:
             if enable_dashboard:
                 print(f"{Colors.GREEN}Dashboard: http://localhost:{config.get('dashboard_port', '3000')}{Colors.END}")
             print('=' * 60)
-            print(f"\n{Colors.CYAN}Management commands (run from {install_dir}):{Colors.END}")
-            print("  docker compose up -d    # Start services")
-            print("  docker compose down     # Stop services")
-            print("  docker compose logs -f  # View logs")
-            print("  docker compose pull     # Update images")
+            if use_docker:
+                print(f"\n{Colors.CYAN}Management commands (run from {install_dir}):{Colors.END}")
+                print("  docker compose up -d    # Start services")
+                print("  docker compose down     # Stop services")
+                print("  docker compose logs -f  # View logs")
+                print("  docker compose pull     # Update images")
+            else:
+                print(f"\n{Colors.CYAN}Run commands (from {install_dir}):{Colors.END}")
+                print(f"  python -m bot.main              # Start the bot")
+                if enable_lavalink:
+                    print(f"  java -jar lavalink/Lavalink.jar # Start Lavalink")
+                if enable_dashboard:
+                    print(f"  python -m bot.dashboard.app     # Start the dashboard")
             print(f"\n{Colors.YELLOW}For support: https://github.com/szentigrad3/discord-music-bot{Colors.END}")
             print('=' * 60)
             return True
