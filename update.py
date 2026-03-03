@@ -39,7 +39,7 @@ GITHUB_API_URL = "https://api.github.com/repos/szentigrad3/discord-music-bot/rel
 DOWNLOAD_URL = "https://github.com/szentigrad3/discord-music-bot/archive/"
 
 # Files and directories to preserve across updates.
-IGNORE_FILES = [".env", "data", "logs", ".venv", "venv"]
+IGNORE_FILES = ["settings.json", "data", "logs", ".venv", "venv"]
 
 
 class bcolors:

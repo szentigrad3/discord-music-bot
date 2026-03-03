@@ -13,6 +13,7 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lava
 - 🕹️ **Interactive controller** — Vocard-style panel with ⏮️ Back, ⏸️/▶️ Play/Pause, ⏭️ Skip, ⏹️ Stop, 🔁 Loop, 🔀 Shuffle, 🔉/🔊 Volume buttons sent directly in the music channel
 - 🔍 **Search command** — shows a select-menu of results so users can pick a track
 - ⏮️ **Back command** — returns to the previously played track (track history)
+- 🚪 **Auto-leave** — bot leaves the voice channel automatically when it is empty
 - 🌐 **Web Dashboard** with Discord OAuth2
 - 🌍 **i18n**: English and Spanish
 - 🗄️ **SQLite** via aiosqlite
@@ -31,8 +32,9 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lava
 
 ### 1. Clone & install
 
-Run the provided install script — it checks prerequisites, creates a virtual
-environment, installs dependencies, and sets up required directories:
+Run the provided install script — it checks prerequisites, walks you through
+an interactive configuration wizard, writes `settings.json` and
+`docker-compose.yml`, then launches all services via Docker:
 
 ```bash
 git clone <repo-url>
@@ -40,7 +42,7 @@ cd discord-music-bot
 bash install.sh
 ```
 
-Or install manually:
+Or install manually (without Docker):
 
 ```bash
 python -m venv .venv
@@ -64,27 +66,30 @@ python update.py -l
 python update.py -v v1.2.0
 ```
 
-Your `.env` file and `data/` directory are preserved automatically during
+Your `settings.json` file and `data/` directory are preserved automatically during
 an update.
 
-### 2. Configure environment
+### 2. Configure
 
 ```bash
-cp .env.example .env   # skipped automatically by install.sh
+cp 'settings Example.json' settings.json
 ```
 
-Edit `.env` and fill in:
-- `DISCORD_TOKEN` — your bot token from [Discord Developer Portal](https://discord.com/developers/applications)
-- `DISCORD_CLIENT_ID` — your application's client ID
-- `DISCORD_CLIENT_SECRET` — OAuth2 client secret (for dashboard)
-- `DISCORD_CALLBACK_URL` — OAuth2 callback URL (e.g. `http://localhost:3000/auth/discord/callback`)
-- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` — from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (optional)
-- `SESSION_SECRET` — a random secret string for session cookies
-- `LAVALINK_HOST` — Lavalink server host (default: `lavalink`)
-- `LAVALINK_PORT` — Lavalink server port (default: `2333`)
-- `LAVALINK_PASSWORD` — Lavalink server password (default: `youshallnotpass`)
+Edit `settings.json` and fill in:
+- `token` — your bot token from [Discord Developer Portal](https://discord.com/developers/applications)
+- `client_id` — your application's client ID
+- `client_secret` — OAuth2 client secret (for dashboard)
+- `callback_url` — OAuth2 callback URL (e.g. `http://localhost:3000/auth/discord/callback`)
+- `spotify_client_id` / `spotify_client_secret` — from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (optional)
+- `session_secret` — a random secret string for session cookies
+- `lavalink.host` — Lavalink server host (default: `lavalink`)
+- `lavalink.port` — Lavalink server port (default: `2333`)
+- `lavalink.password` — Lavalink server password (default: `youshallnotpass`)
 
 ### 3. Deploy slash commands
+
+Slash commands are synced automatically on every bot startup. You can also
+deploy them manually before the first run:
 
 ```bash
 python deploy_commands.py
@@ -105,8 +110,8 @@ python -m bot.dashboard.app
 ## Docker
 
 ```bash
-cp .env.example .env
-# Edit .env
+cp 'settings Example.json' settings.json
+# Edit settings.json
 
 docker compose up -d
 ```
@@ -142,7 +147,12 @@ The dashboard will be available at `http://localhost:3000`.
 |---------|-------------|
 | `/lyrics [song]` | Fetch lyrics via LRCLIB |
 | `/sfx <name>` | Play a local sound effect |
-| `/settings` | View/change server settings (requires Manage Guild) |
+| `/settings show` | Show current server settings (requires Manage Guild) |
+| `/settings prefix <value>` | Set the command prefix |
+| `/settings language <en\|es>` | Set the bot language |
+| `/settings volume <1-100>` | Set the default playback volume |
+| `/settings djrole [role]` | Set (or clear) the DJ role |
+| `/settings announce <true\|false>` | Toggle now-playing announcements |
 | `/ping` | Check bot latency |
 
 ## Prefix Commands
@@ -153,22 +163,22 @@ All commands also work with a configurable prefix (default `!`). Example: `!play
 
 Place `.mp3` files in `data/sfx/` and use `/sfx <name>` (without extension).
 
-## Environment Variables
+## Configuration (settings.json)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DISCORD_TOKEN` | ✅ | Bot token |
-| `DISCORD_CLIENT_ID` | ✅ | Application client ID |
-| `DISCORD_CLIENT_SECRET` | Dashboard | OAuth2 client secret |
-| `DISCORD_CALLBACK_URL` | Dashboard | OAuth2 callback URL |
-| `SPOTIFY_CLIENT_ID` | Optional | Spotify app client ID |
-| `SPOTIFY_CLIENT_SECRET` | Optional | Spotify app client secret |
-| `SESSION_SECRET` | Dashboard | Flask session secret |
-| `DASHBOARD_PORT` | Optional | Dashboard port (default: 3000) |
-| `DATABASE_URL` | ✅ | SQLite file path (e.g. `file:./data/bot.db`) |
-| `LAVALINK_HOST` | ✅ | Lavalink server host (default: `lavalink`) |
-| `LAVALINK_PORT` | Optional | Lavalink server port (default: `2333`) |
-| `LAVALINK_PASSWORD` | Optional | Lavalink server password (default: `youshallnotpass`) |
+| Key | Required | Description |
+|-----|----------|-------------|
+| `token` | ✅ | Bot token |
+| `client_id` | ✅ | Application client ID |
+| `client_secret` | Dashboard | OAuth2 client secret |
+| `callback_url` | Dashboard | OAuth2 callback URL |
+| `spotify_client_id` | Optional | Spotify app client ID |
+| `spotify_client_secret` | Optional | Spotify app client secret |
+| `session_secret` | Dashboard | Flask session secret |
+| `dashboard_port` | Optional | Dashboard port (default: `3000`) |
+| `database_url` | ✅ | SQLite file path (e.g. `file:./data/bot.db`) |
+| `lavalink.host` | ✅ | Lavalink server host (default: `lavalink`) |
+| `lavalink.port` | Optional | Lavalink server port (default: `2333`) |
+| `lavalink.password` | Optional | Lavalink server password (default: `youshallnotpass`) |
 
 ## License
 
