@@ -196,9 +196,15 @@ async def main() -> None:
     if not await _wait_for_lavalink():
         if lavalink_proc is not None:
             lavalink_proc.terminate()
-        raise RuntimeError(
-            f'Lavalink did not become ready at '
-            f'{settings.lavalink_host}:{settings.lavalink_port}'
+            raise RuntimeError(
+                f'Lavalink did not become ready at '
+                f'{settings.lavalink_host}:{settings.lavalink_port}'
+            )
+        logger.warning(
+            'Lavalink is not yet reachable at %s:%d — proceeding anyway; '
+            'wavelink will retry the connection automatically.',
+            settings.lavalink_host,
+            settings.lavalink_port,
         )
 
     dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
