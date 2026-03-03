@@ -52,7 +52,15 @@ class Settings:
         # Lavalink (nested, like Vocard's "nodes" dict)
         lavalink: Dict[str, Any] = data.get('lavalink', {})
         _in_docker = os.environ.get('BOT_IN_DOCKER', '').lower() == 'true'
-        self.lavalink_host: str = lavalink.get('host', 'lavalink' if _in_docker else 'localhost')
+        configured_host: str = lavalink.get('host', '')
+        # Inside Docker, 'localhost' refers to the bot container itself, not the
+        # Lavalink service.  Override any explicit 'localhost' (or missing host)
+        # to 'lavalink' — the Docker Compose service name — so the bot can reach
+        # Lavalink without requiring a manual settings.json change.
+        if _in_docker and (not configured_host or configured_host == 'localhost'):
+            self.lavalink_host = 'lavalink'
+        else:
+            self.lavalink_host = configured_host or 'localhost'
         self.lavalink_port: int = int(lavalink.get('port', 2333))
         self.lavalink_password: str = lavalink.get('password', 'youshallnotpass')
 
