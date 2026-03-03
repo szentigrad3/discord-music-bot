@@ -162,7 +162,7 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     return proc
 
 
-async def _wait_for_lavalink(timeout: int = 60) -> bool:
+async def _wait_for_lavalink(timeout: int = 120) -> bool:
     host = settings.lavalink_host
     port = settings.lavalink_port
     logger.info('Waiting for Lavalink at %s:%d…', host, port)
@@ -193,7 +193,7 @@ async def main() -> None:
     await init_db()
 
     lavalink_proc = await _launch_lavalink()
-    if not await _wait_for_lavalink():
+    if not await _wait_for_lavalink(timeout=settings.lavalink_timeout):
         if lavalink_proc is not None:
             lavalink_proc.terminate()
             raise RuntimeError(

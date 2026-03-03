@@ -18,6 +18,7 @@
     "lavalink": {
         "host": "lavalink",
         "port": 2333,
-        "password": "youshallnotpass"
+        "password": "youshallnotpass",
+        "timeout": 120
     }
 }

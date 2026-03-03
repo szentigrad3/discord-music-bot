@@ -54,6 +54,7 @@ class Settings:
         self.lavalink_host: str = lavalink.get('host', 'lavalink')
         self.lavalink_port: int = int(lavalink.get('port', 2333))
         self.lavalink_password: str = lavalink.get('password', 'youshallnotpass')
+        self.lavalink_timeout: int = int(lavalink.get('timeout', 120))
 
         # Logging — LOG_LEVEL env var takes precedence over settings.json
         _level_str: str = (
