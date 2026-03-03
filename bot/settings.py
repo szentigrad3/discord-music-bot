@@ -7,6 +7,7 @@ all previous os.getenv() calls throughout the project.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -52,6 +53,16 @@ class Settings:
         self.lavalink_host: str = lavalink.get('host', 'lavalink')
         self.lavalink_port: int = int(lavalink.get('port', 2333))
         self.lavalink_password: str = lavalink.get('password', 'youshallnotpass')
+
+        # Logging
+        _level_str: str = data.get('log_level', 'INFO').upper()
+        _valid_levels = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
+        if _level_str not in _valid_levels:
+            raise ValueError(
+                f'Invalid log_level: "{_level_str}". '
+                f'Must be one of: {", ".join(sorted(_valid_levels))}'
+            )
+        self.log_level: int = getattr(logging, _level_str)
 
 
 _settings_file = ROOT_DIR / 'settings.json'

@@ -6,11 +6,14 @@ from typing import TYPE_CHECKING
 import discord
 import wavelink
 
+from bot.logger import get_logger
 from .player import MusicPlayer
 from .track import Track
 
 if TYPE_CHECKING:
     from discord.ext import commands
+
+logger = get_logger(__name__)
 
 
 async def get_or_create_player(
@@ -98,7 +101,7 @@ async def _ensure_spotify_token() -> bool:
                 _spotify_token_expiry = time.time() + data['expires_in'] - 60
                 return True
     except Exception as e:
-        print(f'[Spotify] Failed to get token: {e}')
+        logger.error('[Spotify] Failed to get token: %s', e)
         return False
 
 
