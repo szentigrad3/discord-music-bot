@@ -156,6 +156,8 @@ class Player(VoiceProtocol):
         self._last_position = state.get("position")
 
     async def _dispatch_voice_update(self, voice_data: Dict[str, Any] = None) -> None:
+        if not self._node._session_id:
+            return
         if {"sessionId", "event"} != self._voice_state.keys():
             return
         state = voice_data or self._voice_state
