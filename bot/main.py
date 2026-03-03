@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from pathlib import Path
 
 import discord
 import wavelink
@@ -145,8 +146,14 @@ async def main() -> None:
     dashboard_thread.start()
 
     async with bot:
-        await bot.load_extension('bot.cogs.music')
-        await bot.load_extension('bot.cogs.utility')
+        cogs_dir = Path(__file__).parent / 'cogs'
+        for cog_file in sorted(cogs_dir.glob('*.py')):
+            if cog_file.stem == '__init__':
+                continue
+            try:
+                await bot.load_extension(f'bot.cogs.{cog_file.stem}')
+            except Exception as e:
+                print(f'⚠️  Failed to load cog {cog_file.stem}: {e}')
 
         if not settings.token:
             raise RuntimeError('token is not set in settings.json')
