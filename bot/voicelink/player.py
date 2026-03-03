@@ -192,6 +192,10 @@ class Player(VoiceProtocol):
             return
         self.channel = self.guild.get_channel(int(channel_id))
         if not data.get("token"):
+            # If VOICE_SERVER_UPDATE already arrived (event is present), dispatch
+            # now that we have the fresh Discord session ID.
+            if "event" in self._voice_state:
+                await self._dispatch_voice_update(self._voice_state)
             return
         await self._dispatch_voice_update({**self._voice_state, "event": data})
 
@@ -223,6 +227,7 @@ class Player(VoiceProtocol):
         self_deaf: bool = True,
         self_mute: bool = False,
     ) -> None:
+        self._voice_state.clear()
         await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf, self_mute=self_mute)
         self._node._players[self.guild.id] = self
         self._is_connected = True

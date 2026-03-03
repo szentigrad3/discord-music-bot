@@ -314,6 +314,10 @@ class Node:
             await asyncio.sleep(3)
             try:
                 if player.channel:
+                    # Clear stale voice state so the upcoming VOICE_STATE_UPDATE /
+                    # VOICE_SERVER_UPDATE pair is used exclusively, preventing a
+                    # mismatched old sessionId + new token that causes Lavalink 400.
+                    player._voice_state.clear()
                     # Re-trigger Discord's VOICE_STATE_UPDATE + VOICE_SERVER_UPDATE
                     # so fresh tokens/session IDs are obtained instead of reusing
                     # potentially stale cached voice state that would cause 400 errors.

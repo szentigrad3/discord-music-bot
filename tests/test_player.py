@@ -383,8 +383,46 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
 
         self.assertEqual(player._voice_state.get("sessionId"), "new_discord_session")
 
+    def test_on_voice_state_update_dispatches_when_event_already_present(self):
+        """When VOICE_SERVER_UPDATE arrived first (event set), VOICE_STATE_UPDATE triggers dispatch."""
+        player = _make_player()
+        # Simulate VOICE_SERVER_UPDATE already received before VOICE_STATE_UPDATE
+        player._voice_state = {
+            "event": {"token": "fresh_token", "endpoint": "us-east1.discord.media:443"}
+        }
+        player._guild.get_channel = MagicMock(return_value=MagicMock())
+
+        voice_state_data = {
+            "session_id": "new_discord_session",
+            "channel_id": "987654321",
+            "user_id": "111",
+        }
+
+        self._run(player.on_voice_state_update(voice_state_data))
+
+        player._node.send.assert_called_once()
+        call_args = player._node.send.call_args
+        sent_data = call_args.kwargs.get("data") or call_args.args[2]
+        self.assertEqual(sent_data["voice"]["token"], "fresh_token")
+        self.assertEqual(sent_data["voice"]["sessionId"], "new_discord_session")
+
+    def test_on_voice_state_update_no_dispatch_when_event_absent(self):
+        """VOICE_STATE_UPDATE does NOT dispatch when event is not yet in _voice_state."""
+        player = _make_player()
+        player._voice_state = {}
+        player._guild.get_channel = MagicMock(return_value=MagicMock())
+
+        voice_state_data = {
+            "session_id": "new_discord_session",
+            "channel_id": "987654321",
+            "user_id": "111",
+        }
+
+        self._run(player.on_voice_state_update(voice_state_data))
+
+        player._node.send.assert_not_called()
+
     def test_on_voice_state_update_teardown_on_channel_leave(self):
-        """on_voice_state_update calls teardown and clears state when channel_id is None."""
         player = _make_player()
         player._voice_state = {"sessionId": "old_session", "event": {"token": "t", "endpoint": "e"}}
         player.teardown = AsyncMock()
