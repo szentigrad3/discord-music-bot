@@ -158,9 +158,12 @@ class Player(VoiceProtocol):
         if {"sessionId", "event"} != self._voice_state.keys():
             return
         state = voice_data or self._voice_state
+        endpoint = state['event'].get('endpoint')
+        if not endpoint:
+            return
         data = {
             "token": state['event']['token'],
-            "endpoint": state['event']['endpoint'],
+            "endpoint": endpoint,
             "sessionId": state['sessionId'],
         }
         await self.send(method=RequestMethod.PATCH, data={"voice": data})

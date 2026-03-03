@@ -247,7 +247,10 @@ class Node:
             json=data
         ) as resp:
             if resp.status >= 300:
-                raise NodeException(f"Getting errors from Lavalink REST api")
+                error_body = await resp.text()
+                raise NodeException(
+                    f"Lavalink REST api returned {resp.status}: {error_body}"
+                )
 
             if method == RequestMethod.DELETE:
                 return await resp.json(content_type=None)
@@ -366,7 +369,10 @@ class Node:
             json={"refreshToken": token.token}
         ) as resp:
             if resp.status >= 300:
-                raise NodeException(f"Getting errors from Lavalink REST api")
+                error_body = await resp.text()
+                raise NodeException(
+                    f"Lavalink REST api returned {resp.status}: {error_body}"
+                )
 
 
 class NodePool:
