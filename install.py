@@ -10,6 +10,7 @@ import sys
 import platform
 import subprocess
 import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -284,6 +285,26 @@ class DockerManager:
     """Runs Docker / Docker Compose commands."""
 
     @staticmethod
+    def _clean_corrupted_plugins(plugins_dir: Path) -> None:
+        """Remove corrupted plugin JAR files so Lavalink can re-download them.
+
+        A corrupted JAR (e.g. from an interrupted download) causes a
+        ``ZipException: zip END header not found`` that prevents Lavalink from
+        starting.  Removing the bad file lets Lavalink fetch a fresh copy.
+        """
+        for jar in plugins_dir.glob('*.jar'):
+            try:
+                with zipfile.ZipFile(jar) as zf:
+                    if zf.testzip() is not None:
+                        raise zipfile.BadZipFile('CRC check failed')
+            except (zipfile.BadZipFile, OSError):
+                print(f"{Colors.YELLOW}Removing corrupted plugin JAR: {jar.name}{Colors.END}")
+                try:
+                    jar.unlink()
+                except OSError as exc:
+                    print(f"{Colors.RED}Could not remove {jar.name}: {exc}{Colors.END}")
+
+    @staticmethod
     def run(cmd: str, timeout: int = 1800) -> tuple[bool, str, str]:
         try:
             result = subprocess.run(
@@ -305,6 +326,9 @@ class DockerManager:
         original = os.getcwd()
         try:
             os.chdir(install_dir)
+            plugins_dir = install_dir / 'lavalink' / 'plugins'
+            if plugins_dir.exists():
+                DockerManager._clean_corrupted_plugins(plugins_dir)
             print(f"{Colors.CYAN}Pulling Docker images …{Colors.END}")
             self.run('docker compose pull')
             print(f"{Colors.CYAN}Starting services …{Colors.END}")

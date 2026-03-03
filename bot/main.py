@@ -4,6 +4,7 @@ import asyncio
 import os
 import socket
 import threading
+import zipfile
 from pathlib import Path
 
 import discord
@@ -139,11 +140,34 @@ def _is_port_open(host: str, port: int) -> bool:
         return False
 
 
+def _clean_corrupted_plugins(plugins_dir: Path) -> None:
+    """Remove corrupted plugin JAR files so Lavalink can re-download them on startup.
+
+    A corrupted JAR (e.g. from an interrupted download) causes a
+    ``ZipException: zip END header not found`` that prevents Lavalink from
+    starting.  Removing the bad file lets Lavalink fetch a fresh copy.
+    """
+    for jar in plugins_dir.glob('*.jar'):
+        try:
+            with zipfile.ZipFile(jar) as zf:
+                if zf.testzip() is not None:
+                    raise zipfile.BadZipFile('CRC check failed')
+        except (zipfile.BadZipFile, OSError):
+            logger.warning('Removing corrupted plugin JAR: %s', jar.name)
+            try:
+                jar.unlink()
+            except OSError as exc:
+                logger.warning('Could not remove %s: %s', jar.name, exc)
+
+
 async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
     if not jar_path.exists():
         logger.warning('lavalink/Lavalink.jar not found, skipping Lavalink auto-start')
         return None
+    plugins_dir = jar_path.parent / 'plugins'
+    if plugins_dir.exists():
+        _clean_corrupted_plugins(plugins_dir)
     logger.info('Starting Lavalink…')
     log_path = jar_path.parent / 'lavalink.log'
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
