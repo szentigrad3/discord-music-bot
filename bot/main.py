@@ -195,6 +195,10 @@ async def main() -> None:
     if not await _wait_for_lavalink():
         if lavalink_proc is not None:
             lavalink_proc.terminate()
+            try:
+                await asyncio.wait_for(lavalink_proc.wait(), timeout=10.0)
+            except asyncio.TimeoutError:
+                lavalink_proc.kill()
             raise RuntimeError(
                 f'Lavalink did not become ready at '
                 f'{settings.lavalink_host}:{settings.lavalink_port}'
@@ -233,6 +237,10 @@ async def main() -> None:
     finally:
         if lavalink_proc is not None:
             lavalink_proc.terminate()
+            try:
+                await asyncio.wait_for(lavalink_proc.wait(), timeout=10.0)
+            except asyncio.TimeoutError:
+                lavalink_proc.kill()
 
 
 if __name__ == '__main__':
