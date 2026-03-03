@@ -6,10 +6,13 @@ from typing import TYPE_CHECKING
 import discord
 import wavelink
 
+from bot.logger import get_logger
 from .track import Track
 
 if TYPE_CHECKING:
     from discord.ext import commands
+
+logger = get_logger(__name__)
 
 FILTERS: dict[str, str | None] = {
     'none': None,
@@ -82,7 +85,7 @@ class MusicPlayer:
                 return results.tracks[0] if results.tracks else None
             return results[0] if results else None
         except Exception as e:
-            print(f'[Player:{self.guild.id}] Failed to resolve "{track.title}": {e}')
+            logger.error('[Player:%s] Failed to resolve "%s": %s', self.guild.id, track.title, e)
             return None
 
     async def _play(self, track: Track) -> None:
@@ -90,7 +93,7 @@ class MusicPlayer:
         self.paused = False
         wl_track = await self._resolve_wl_track(track)
         if not wl_track:
-            print(f'[Player:{self.guild.id}] Could not resolve "{track.title}", skipping.')
+            logger.warning('[Player:%s] Could not resolve "%s", skipping.', self.guild.id, track.title)
             await self._on_track_end()
             return
 
@@ -100,7 +103,7 @@ class MusicPlayer:
             if self.filter != 'none':
                 await self._wl_player.set_filters(_build_wavelink_filters(self.filter))
         except Exception as e:
-            print(f'[Player:{self.guild.id}] Failed to play "{track.title}": {e}')
+            logger.error('[Player:%s] Failed to play "%s": %s', self.guild.id, track.title, e)
             await self._on_track_end()
             return
 
@@ -127,7 +130,7 @@ class MusicPlayer:
         try:
             self._controller_message = await self.text_channel.send(embed=embed, view=view)
         except Exception as e:
-            print(f'[Player:{self.guild.id}] Failed to send controller: {e}')
+            logger.error('[Player:%s] Failed to send controller: %s', self.guild.id, e)
 
     async def _on_track_end(self) -> None:
         if self.repeat_mode == RepeatMode.ONE and self.current:

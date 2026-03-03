@@ -12,6 +12,8 @@
 
     "database_url": "file:./data/bot.db",
 
+    "log_level": "INFO",
+
     "lavalink": {
         "host": "lavalink",
         "port": 2333,

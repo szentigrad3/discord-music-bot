@@ -11,3 +11,4 @@ settings.json
 *.db
 *.db-journal
 data/sfx/*.mp3
+logs/

@@ -15,7 +15,10 @@ from flask import (
     url_for,
 )
 
+from bot.logger import get_logger
 from bot.settings import settings
+
+logger = get_logger(__name__)
 
 DISCORD_API = 'https://discord.com/api/v10'
 DISCORD_AUTH_URL = 'https://discord.com/api/oauth2/authorize'
@@ -224,5 +227,5 @@ if __name__ == '__main__':
     if not settings.session_secret:
         raise RuntimeError('session_secret is not set in settings.json. Refusing to start.')
     port = settings.dashboard_port
-    print(f'🌐 Dashboard running at http://localhost:{port}')
+    logger.info('Dashboard running at http://localhost:%d', port)
     app.run(host='0.0.0.0', port=port)

@@ -9,6 +9,9 @@ from discord.ext import commands
 
 from bot.db import get_guild_settings, update_guild_settings
 from bot.i18n import t
+from bot.logger import get_logger
+
+logger = get_logger(__name__)
 
 SFX_DIR = Path(__file__).parent.parent.parent / 'data' / 'sfx'
 
@@ -136,7 +139,7 @@ class Utility(commands.Cog):
                     await ctx.channel.send(embeds=[page_embed])
 
         except Exception as err:
-            print(f'[lyrics] {err}')
+            logger.error('[lyrics] %s', err)
             await edit(f'❌ Failed to fetch lyrics: {err}')
 
     # ================================================================== /sfx ==

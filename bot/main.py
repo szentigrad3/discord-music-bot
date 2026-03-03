@@ -11,7 +11,10 @@ import wavelink
 from discord.ext import commands
 
 from bot.db import get_guild_settings, init_db
+from bot.logger import get_logger, setup_logging
 from bot.settings import settings
+
+logger = get_logger(__name__)
 
 
 async def _get_prefix(bot: commands.Bot, message: discord.Message) -> str:
@@ -43,8 +46,8 @@ bot = create_bot()
 
 @bot.event
 async def on_ready() -> None:
-    print(f'✅ Logged in as {bot.user}')
-    print(f'   Serving {len(bot.guilds)} guild(s)')
+    logger.info('Logged in as %s', bot.user)
+    logger.info('Serving %d guild(s)', len(bot.guilds))
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.listening,
@@ -53,14 +56,14 @@ async def on_ready() -> None:
     )
     try:
         synced = await bot.tree.sync()
-        print(f'Synced {len(synced)} application (/) commands.')
+        logger.info('Synced %d application (/) commands.', len(synced))
     except Exception as e:
-        print(f'Failed to sync commands: {e}')
+        logger.error('Failed to sync commands: %s', e)
 
 
 @bot.event
 async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload) -> None:
-    print(f'✅ Lavalink node connected: {payload.node.identifier} (resumed={payload.resumed})')
+    logger.info('Lavalink node connected: %s (resumed=%s)', payload.node.identifier, payload.resumed)
 
 
 @bot.event
@@ -114,14 +117,14 @@ async def on_voice_state_update(
     await music_player.stop()
     await wl_player.disconnect()
     bot.queues.pop(str(guild.id), None)
-    print(f'[voiceStateUpdate] Auto-left empty channel in guild {guild.id}')
+    logger.info('[voiceStateUpdate] Auto-left empty channel in guild %s', guild.id)
 
 
 @bot.event
 async def on_command_error(ctx: commands.Context, error: Exception) -> None:
     if isinstance(error, commands.CommandNotFound):
         return
-    print(f'[on_command_error] {error}')
+    logger.error('[on_command_error] %s', error)
     try:
         await ctx.reply('❌ An error occurred while executing that command.')
     except Exception:
@@ -139,22 +142,22 @@ def _is_port_open(host: str, port: int) -> bool:
 async def _wait_for_lavalink(timeout: int = 60) -> bool:
     host = settings.lavalink_host
     port = settings.lavalink_port
-    print(f'⏳  Waiting for Lavalink at {host}:{port}…')
+    logger.info('Waiting for Lavalink at %s:%d…', host, port)
     for _ in range(timeout):
         if _is_port_open(host, port):
-            print('✅  Lavalink is ready')
+            logger.info('Lavalink is ready')
             return True
         await asyncio.sleep(1)
-    print(f'⚠️  Lavalink at {host}:{port} did not become ready within {timeout} seconds')
+    logger.warning('Lavalink at %s:%d did not become ready within %d seconds', host, port, timeout)
     return False
 
 
 async def _launch_lavalink() -> subprocess.Popen | None:
     jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
     if not jar_path.exists():
-        print('⚠️  lavalink/Lavalink.jar not found, skipping Lavalink auto-start')
+        logger.warning('lavalink/Lavalink.jar not found, skipping Lavalink auto-start')
         return None
-    print('🎵  Starting Lavalink…')
+    logger.info('Starting Lavalink…')
     log_path = jar_path.parent / 'lavalink.log'
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
     proc = subprocess.Popen(
@@ -168,18 +171,19 @@ async def _launch_lavalink() -> subprocess.Popen | None:
 
 def _start_dashboard() -> None:
     if not settings.session_secret:
-        print('⚠️  Dashboard not started: session_secret is not set in settings.json')
+        logger.warning('Dashboard not started: session_secret is not set in settings.json')
         return
     from bot.dashboard.app import app as flask_app
     port = settings.dashboard_port
-    print(f'🌐 Dashboard running at http://localhost:{port}')
+    logger.info('Dashboard running at http://localhost:%d', port)
     try:
         flask_app.run(host='0.0.0.0', port=port)
     except Exception as exc:
-        print(f'[dashboard] Failed to start: {exc}')
+        logger.error('[dashboard] Failed to start: %s', exc)
 
 
 async def main() -> None:
+    setup_logging(level=settings.log_level)
     await init_db()
 
     lavalink_proc = await _launch_lavalink()
@@ -203,7 +207,7 @@ async def main() -> None:
                 try:
                     await bot.load_extension(f'bot.cogs.{cog_file.stem}')
                 except Exception as e:
-                    print(f'⚠️  Failed to load cog {cog_file.stem}: {e}')
+                    logger.warning('Failed to load cog %s: %s', cog_file.stem, e)
 
             if not settings.token:
                 raise RuntimeError('token is not set in settings.json')
