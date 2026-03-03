@@ -23,10 +23,6 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lava
 
 - Python 3.12+
 - **Lavalink** server (included in Docker Compose setup)
-- **Debian/Ubuntu only**: `python3-venv` and `python3-pip` packages
-  ```bash
-  sudo apt install python3-venv python3-pip
-  ```
 
 ## Setup
 
@@ -42,11 +38,9 @@ cd discord-music-bot
 bash install.sh
 ```
 
-Or install manually (without Docker):
+Or install manually (without Docker, installs packages into the active Python environment):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
