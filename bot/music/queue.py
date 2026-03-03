@@ -67,14 +67,15 @@ _spotify_token_expiry: float = 0.0
 
 
 async def _ensure_spotify_token() -> bool:
-    import os
     import time
     import aiohttp
 
+    from bot.settings import settings
+
     global _spotify_access_token, _spotify_token_expiry
 
-    client_id = os.getenv('SPOTIFY_CLIENT_ID')
-    client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+    client_id = settings.spotify_client_id
+    client_secret = settings.spotify_client_secret
     if not client_id or not client_secret:
         return False
 
