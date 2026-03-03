@@ -374,9 +374,9 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
     volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml
-      - ./lavalink/plugins:/opt/Lavalink/plugins
-      - ./lavalink/logs:/opt/Lavalink/logs
+      - ./main/lavalink/application.yml:/opt/Lavalink/application.yml
+      - lavalink_plugins:/opt/Lavalink/plugins
+      - ./main/lavalink/logs:/opt/Lavalink/logs
     expose:
       - "{lavalink_port}"
 """ if enable_lavalink else ''
@@ -397,6 +397,8 @@ class Installer:
       - "{dashboard_port}:{dashboard_port}"
 """ if enable_dashboard else ''
 
+        lavalink_volume_section = "\nvolumes:\n  lavalink_plugins:\n" if enable_lavalink else ''
+
         content = (
             f"services:\n"
             f"  bot:\n"
@@ -410,6 +412,7 @@ class Installer:
             f"{bot_depends}\n"
             f"{lavalink_service}"
             f"{dashboard_service}"
+            f"{lavalink_volume_section}"
         )
 
         dest = install_dir / 'docker-compose.yml'
@@ -528,9 +531,8 @@ logging:
     root: INFO
     lavalink: INFO
 """
-        lavalink_dir = install_dir / 'lavalink'
+        lavalink_dir = install_dir / 'main' / 'lavalink'
         FileManager.mkdir(lavalink_dir)
-        FileManager.mkdir(lavalink_dir / 'plugins')
         FileManager.mkdir(lavalink_dir / 'logs')
 
         dest = lavalink_dir / 'application.yml'
