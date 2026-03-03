@@ -150,6 +150,7 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
         proc = await asyncio.create_subprocess_exec(
             'java', '-jar', str(jar_path),
             cwd=str(jar_path.parent),
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=log_file,
             stderr=log_file,
         )
