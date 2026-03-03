@@ -388,9 +388,9 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
     volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml
-      - ./lavalink/plugins:/opt/Lavalink/plugins
-      - ./lavalink/logs:/opt/Lavalink/logs
+      - ./lavalink/application.yml:/application.yml
+      - ./lavalink/plugins:/plugins
+      - ./lavalink/logs:/logs
     expose:
       - "{lavalink_port}"
 """ if enable_lavalink else ''
