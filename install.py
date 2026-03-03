@@ -374,9 +374,9 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
     volumes:
-      - ./main/lavalink/application.yml:/opt/Lavalink/application.yml
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml
       - lavalink_plugins:/opt/Lavalink/plugins
-      - ./main/lavalink/logs:/opt/Lavalink/logs
+      - ./lavalink/logs:/opt/Lavalink/logs
     expose:
       - "{lavalink_port}"
 """ if enable_lavalink else ''
@@ -531,7 +531,7 @@ logging:
     root: INFO
     lavalink: INFO
 """
-        lavalink_dir = install_dir / 'main' / 'lavalink'
+        lavalink_dir = install_dir / 'lavalink'
         FileManager.mkdir(lavalink_dir)
         FileManager.mkdir(lavalink_dir / 'logs')
 
