@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import socket
-import subprocess
 import threading
 from pathlib import Path
 
@@ -152,7 +151,7 @@ async def _wait_for_lavalink(timeout: int = 60) -> bool:
     return False
 
 
-async def _launch_lavalink() -> subprocess.Popen | None:
+async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
     if not jar_path.exists():
         logger.warning('lavalink/Lavalink.jar not found, skipping Lavalink auto-start')
@@ -161,8 +160,8 @@ async def _launch_lavalink() -> subprocess.Popen | None:
     log_path = jar_path.parent / 'lavalink.log'
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
     try:
-        proc = subprocess.Popen(
-            ['java', '-jar', str(jar_path)],
+        proc = await asyncio.create_subprocess_exec(
+            'java', '-jar', str(jar_path),
             cwd=str(jar_path.parent),
             stdout=log_file,
             stderr=log_file,
