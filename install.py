@@ -448,6 +448,8 @@ class Installer:
 
             'database_url': 'file:./data/bot.db',
 
+            'log_level': 'INFO',
+            '_log_level_note': 'Set to DEBUG to capture all internal activity (also overridable via LOG_LEVEL env var)',
             'lavalink': {
                 'host': 'lavalink',
                 'port': int(config.get('lavalink_port', 2333)),
@@ -458,6 +460,11 @@ class Installer:
         dest = install_dir / 'settings.json'
         dest.write_text(_json.dumps(data, indent=4) + '\n', encoding='utf-8')
         print(f"{Colors.GREEN}Wrote settings.json{Colors.END}")
+
+        example = install_dir / 'settings Example.json'
+        if example.exists():
+            example.unlink()
+            print(f"{Colors.GREEN}Removed 'settings Example.json'{Colors.END}")
 
     # ------------------------------------------------------------------ lavalink config writer
 
