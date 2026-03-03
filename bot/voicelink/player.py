@@ -269,15 +269,15 @@ class Player(VoiceProtocol):
         """Plays a track."""
         data: Dict[str, Any] = {
             "encodedTrack": track.track_id,
-            "position": str(start or 0),
+            "position": start or 0,
             "volume": self._volume,
         }
         if end or getattr(track, 'end_time', None):
-            data["endTime"] = str(end or track.end_time)
+            data["endTime"] = end or track.end_time
 
         await self.send(
             method=RequestMethod.PATCH,
-            query=f"noReplace={ignore_if_playing}",
+            query=f"noReplace={'true' if ignore_if_playing else 'false'}",
             data=data,
         )
         if self._node.yt_ratelimit:
