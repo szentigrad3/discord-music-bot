@@ -244,6 +244,54 @@ If you modify source files or `requirements.txt`, rebuild the bot image before s
 docker compose up -d --build
 ```
 
+### 7. Auto-start with systemd (optional)
+
+To have the Docker Compose stack start automatically on boot and restart on failure, wrap it in a systemd unit file.
+
+Create `/etc/systemd/system/discord-music-bot.service`:
+
+```ini
+[Unit]
+Description=Discord Music Bot (Docker Compose)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/discord-music-bot
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Replace `/path/to/discord-music-bot` with the absolute path to the cloned repository (run `pwd` inside it to find it). Also verify the Docker binary location on your system with `which docker` and update `ExecStart`/`ExecStop` accordingly.
+
+Then enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable discord-music-bot
+sudo systemctl start discord-music-bot
+```
+
+**Useful commands:**
+
+```bash
+# Check status
+sudo systemctl status discord-music-bot
+
+# View logs (via Docker)
+docker compose logs -f
+
+# Stop / restart
+sudo systemctl stop discord-music-bot
+sudo systemctl restart discord-music-bot
+```
+
 ## Commands
 
 ### Music
