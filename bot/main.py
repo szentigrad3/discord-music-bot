@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-import socket
 import threading
 import zipfile
 from pathlib import Path
 
+import aiohttp
 import discord
 import wavelink
 from discord.ext import commands
@@ -132,14 +132,6 @@ async def on_command_error(ctx: commands.Context, error: Exception) -> None:
         pass
 
 
-def _is_port_open(host: str, port: int) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=1):
-            return True
-    except OSError:
-        return False
-
-
 def _clean_corrupted_plugins(plugins_dir: Path) -> None:
     """Remove corrupted plugin JAR files so Lavalink can re-download them on startup.
 
@@ -190,12 +182,19 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
 async def _wait_for_lavalink(timeout: int = 60) -> bool:
     host = settings.lavalink_host
     port = settings.lavalink_port
+    url = f'http://{host}:{port}/version'
+    headers = {'Authorization': settings.lavalink_password}
     logger.info('Waiting for Lavalink at %s:%d…', host, port)
-    for _ in range(timeout):
-        if _is_port_open(host, port):
-            logger.info('Lavalink is ready')
-            return True
-        await asyncio.sleep(1)
+    async with aiohttp.ClientSession() as session:
+        for _ in range(timeout):
+            try:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=2)) as resp:
+                    if resp.status == 200:
+                        logger.info('Lavalink is ready')
+                        return True
+            except Exception as exc:
+                logger.debug('Lavalink not ready yet at %s:%d: %s', host, port, exc)
+            await asyncio.sleep(1)
     logger.warning('Lavalink at %s:%d did not become ready within %d seconds', host, port, timeout)
     return False
 
