@@ -7,9 +7,9 @@ services:
       - SERVER_PORT=2333
       - LAVALINK_SERVER_PASSWORD=youshallnotpass
     volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml
-      - ./lavalink/plugins:/opt/Lavalink/plugins
-      - ./lavalink/logs:/opt/Lavalink/logs
+      - ./bot/lavalink/application.yml:/opt/Lavalink/application.yml
+      - lavalink_plugins:/opt/Lavalink/plugins
+      - ./bot/lavalink/logs:/opt/Lavalink/logs
     expose:
       - "2333"
 
@@ -23,3 +23,6 @@ services:
       - "${DASHBOARD_PORT:-3000}:3000"
     depends_on:
       - lavalink
+
+volumes:
+  lavalink_plugins:
