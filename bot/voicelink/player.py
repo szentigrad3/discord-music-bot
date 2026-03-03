@@ -162,6 +162,8 @@ class Player(VoiceProtocol):
         endpoint = state['event'].get('endpoint')
         if not endpoint:
             return
+        if "://" in endpoint:
+            endpoint = endpoint.split("://", 1)[1]
         token = state['event'].get('token')
         session_id = state.get('sessionId')
         if not token or not session_id:
