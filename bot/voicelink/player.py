@@ -158,7 +158,7 @@ class Player(VoiceProtocol):
     async def _dispatch_voice_update(self, voice_data: Dict[str, Any] = None) -> None:
         if not self._node._session_id:
             return
-        if {"sessionId", "event"} != self._voice_state.keys():
+        if not all(k in self._voice_state for k in ("sessionId", "channelId", "event")):
             return
         state = voice_data or self._voice_state
         endpoint = state['event'].get('endpoint')
@@ -168,12 +168,14 @@ class Player(VoiceProtocol):
             endpoint = endpoint.split("://", 1)[1]
         token = state['event'].get('token')
         session_id = state.get('sessionId')
-        if not token or not session_id:
+        channel_id = state.get('channelId')
+        if not token or not session_id or not channel_id:
             return
         data = {
-            "token": token,
-            "endpoint": endpoint,
-            "sessionId": session_id,
+            "token": str(token),
+            "endpoint": str(endpoint),
+            "sessionId": str(session_id),
+            "channelId": str(channel_id),
         }
         try:
             await self.send(method=RequestMethod.PATCH, data={"voice": data})
@@ -185,7 +187,10 @@ class Player(VoiceProtocol):
         await self._dispatch_voice_update(self._voice_state)
 
     async def on_voice_state_update(self, data: dict) -> None:
-        self._voice_state.update({"sessionId": data.get("session_id")})
+        self._voice_state.update({
+            "sessionId": data.get("session_id"),
+            "channelId": data.get("channel_id"),
+        })
         if not (channel_id := data.get("channel_id")):
             await self.teardown()
             self._voice_state.clear()

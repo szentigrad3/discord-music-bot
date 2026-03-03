@@ -412,16 +412,23 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
     volumes:
-      - ./lavalink/application.yml:/application.yml
-      - ./lavalink/plugins:/plugins
-      - ./lavalink/logs:/logs
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml
+      - ./lavalink/plugins:/opt/Lavalink/plugins
+      - ./lavalink/logs:/opt/Lavalink/logs
     expose:
       - "{lavalink_port}"
+    healthcheck:
+      # curl is available in the official Lavalink Docker image
+      test: ["CMD-SHELL", "curl -sf http://localhost:{lavalink_port}/version -H \\"Authorization: $${LAVALINK_SERVER_PASSWORD}\\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 """ if enable_lavalink else ''
 
         bot_depends = ''
         if enable_lavalink:
-            bot_depends = '\n    depends_on:\n      - lavalink'
+            bot_depends = '\n    depends_on:\n      lavalink:\n        condition: service_healthy'
 
         dashboard_service = f"""
   dashboard:
@@ -440,6 +447,8 @@ class Installer:
             f"  bot:\n"
             f"    build: .\n"
             f"    restart: unless-stopped\n"
+            f"    environment:\n"
+            f"      - BOT_IN_DOCKER=true\n"
             f"    volumes:\n"
             f"      - ./data:/app/data\n"
             f"      - ./settings.json:/app/settings.json\n"
@@ -808,7 +817,8 @@ logging:
             else:
                 print(f"{Colors.GREEN}✅  Installation complete. Run these commands from {install_dir}:{Colors.END}")
                 if enable_lavalink:
-                    print(f"\n{Colors.YELLOW}⚠  Start Lavalink before the bot:{Colors.END}")
+                    print(f"\n{Colors.YELLOW}⚠  Start Lavalink before the bot (from {install_dir}):{Colors.END}")
+                    print(f"  cd lavalink && java -jar Lavalink.jar")
                 print(f"\n  python -m bot.main")
                 if enable_dashboard:
                     print(f"  python -m bot.dashboard.app  # Start the dashboard")
@@ -833,11 +843,11 @@ logging:
                 print("  docker compose pull     # Update images")
             else:
                 print(f"\n{Colors.CYAN}Run commands (from {install_dir}):{Colors.END}")
-                print(f"  python -m bot.main              # Start the bot")
+                print(f"  python -m bot.main                            # Start the bot")
                 if enable_lavalink:
-                    print(f"  java -jar lavalink/Lavalink.jar # Start Lavalink")
+                    print(f"  cd lavalink && java -jar Lavalink.jar         # Start Lavalink (run from lavalink/ dir)")
                 if enable_dashboard:
-                    print(f"  python -m bot.dashboard.app     # Start the dashboard")
+                    print(f"  python -m bot.dashboard.app                   # Start the dashboard")
             print(f"\n{Colors.YELLOW}For support: https://github.com/szentigrad3/discord-music-bot{Colors.END}")
             print('=' * 60)
             return True

@@ -66,7 +66,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         """Guard: returns immediately when Lavalink session ID is not yet set."""
         player = _make_player()
         player._node._session_id = None
-        player._voice_state = {"sessionId": "ds1", "event": {"token": "tok", "endpoint": "us-east1.discord.media:443"}}
+        player._voice_state = {"sessionId": "ds1", "channelId": "111222333", "event": {"token": "tok", "endpoint": "us-east1.discord.media:443"}}
 
         self._run(player._dispatch_voice_update())
 
@@ -75,7 +75,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
     def test_returns_early_when_voice_state_incomplete_missing_event(self):
         """Guard: returns immediately when voice state only has sessionId (no event yet)."""
         player = _make_player()
-        player._voice_state = {"sessionId": "ds1"}
+        player._voice_state = {"sessionId": "ds1", "channelId": "111222333"}
 
         self._run(player._dispatch_voice_update())
 
@@ -104,6 +104,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         player = _make_player()
         player._voice_state = {
             "sessionId": "ds1",
+            "channelId": "111222333",
             "event": {"token": "tok", "endpoint": None},
         }
 
@@ -116,6 +117,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         player = _make_player()
         player._voice_state = {
             "sessionId": "ds1",
+            "channelId": "111222333",
             "event": {"endpoint": "us-east1.discord.media:443"},
         }
 
@@ -128,6 +130,32 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         player = _make_player()
         player._voice_state = {
             "sessionId": None,
+            "channelId": "111222333",
+            "event": {"token": "tok", "endpoint": "us-east1.discord.media:443"},
+        }
+
+        self._run(player._dispatch_voice_update())
+
+        player._node.send.assert_not_called()
+
+    def test_returns_early_when_channel_id_is_missing(self):
+        """Guard: returns immediately when channelId is not yet set in voice state."""
+        player = _make_player()
+        player._voice_state = {
+            "sessionId": "ds1",
+            "event": {"token": "tok", "endpoint": "us-east1.discord.media:443"},
+        }
+
+        self._run(player._dispatch_voice_update())
+
+        player._node.send.assert_not_called()
+
+    def test_returns_early_when_channel_id_value_is_none(self):
+        """Guard: returns immediately when channelId value is None."""
+        player = _make_player()
+        player._voice_state = {
+            "sessionId": "ds1",
+            "channelId": None,
             "event": {"token": "tok", "endpoint": "us-east1.discord.media:443"},
         }
 
@@ -140,6 +168,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         player = _make_player()
         player._voice_state = {
             "sessionId": "discord_session_abc",
+            "channelId": "856267627019108354",
             "event": {
                 "token": "voice_token_xyz",
                 "endpoint": "us-east1.discord.media:443",
@@ -159,12 +188,14 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         self.assertEqual(voice["token"], "voice_token_xyz")
         self.assertEqual(voice["endpoint"], "us-east1.discord.media:443")
         self.assertEqual(voice["sessionId"], "discord_session_abc")
+        self.assertEqual(voice["channelId"], "856267627019108354")
 
     def test_strips_protocol_prefix_from_endpoint(self):
         """Endpoint with wss:// prefix is stripped before being sent to Lavalink."""
         player = _make_player()
         player._voice_state = {
             "sessionId": "discord_session_abc",
+            "channelId": "856267627019108354",
             "event": {
                 "token": "voice_token_xyz",
                 "endpoint": "wss://us-east1.discord.media:443",
@@ -185,6 +216,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         )
         player._voice_state = {
             "sessionId": "discord_session_abc",
+            "channelId": "856267627019108354",
             "event": {"token": "tok", "endpoint": "us-east1.discord.media:443"},
         }
 
@@ -194,10 +226,11 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         self.assertTrue(any("Failed to dispatch voice update" in msg for msg in cm.output))
 
     def test_voice_data_values_are_strings(self):
-        """All three voice state values sent to Lavalink are strings (Lavalink v4 requirement)."""
+        """All four voice state values sent to Lavalink are strings (Lavalink v4 requirement)."""
         player = _make_player()
         player._voice_state = {
             "sessionId": "discord_session_123",
+            "channelId": "856267627019108354",
             "event": {
                 "token": "some_token",
                 "endpoint": "us-east1.discord.media:443",
@@ -212,6 +245,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
         self.assertIsInstance(voice["token"], str)
         self.assertIsInstance(voice["endpoint"], str)
         self.assertIsInstance(voice["sessionId"], str)
+        self.assertIsInstance(voice["channelId"], str)
 
 
 class TestPlayDataFormat(unittest.TestCase):
@@ -334,9 +368,9 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
         return asyncio.get_event_loop().run_until_complete(coro)
 
     def test_on_voice_server_update_dispatches_when_state_complete(self):
-        """on_voice_server_update should trigger _dispatch_voice_update when sessionId is set."""
+        """on_voice_server_update should trigger _dispatch_voice_update when sessionId and channelId are set."""
         player = _make_player()
-        player._voice_state = {"sessionId": "discord_session_1"}
+        player._voice_state = {"sessionId": "discord_session_1", "channelId": "987654321"}
 
         voice_server_data = {
             "token": "fresh_token",
@@ -350,6 +384,7 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
         call_args = player._node.send.call_args
         sent_data = call_args.kwargs.get("data") or call_args.args[2]
         self.assertEqual(sent_data["voice"]["token"], "fresh_token")
+        self.assertEqual(sent_data["voice"]["channelId"], "987654321")
 
     def test_on_voice_server_update_no_dispatch_when_session_id_missing(self):
         """on_voice_server_update should NOT dispatch if sessionId not yet set."""
@@ -367,7 +402,7 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
         player._node.send.assert_not_called()
 
     def test_on_voice_state_update_updates_session_id(self):
-        """on_voice_state_update should update _voice_state with the new Discord session ID."""
+        """on_voice_state_update should update _voice_state with the new Discord session ID and channelId."""
         player = _make_player()
         player._voice_state = {}
         player._guild.get_channel = MagicMock(return_value=MagicMock())
@@ -382,6 +417,7 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
         self._run(player.on_voice_state_update(voice_state_data))
 
         self.assertEqual(player._voice_state.get("sessionId"), "new_discord_session")
+        self.assertEqual(player._voice_state.get("channelId"), "987654321")
 
     def test_on_voice_state_update_dispatches_when_event_already_present(self):
         """When VOICE_SERVER_UPDATE arrived first (event set), VOICE_STATE_UPDATE triggers dispatch."""
@@ -405,6 +441,7 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
         sent_data = call_args.kwargs.get("data") or call_args.args[2]
         self.assertEqual(sent_data["voice"]["token"], "fresh_token")
         self.assertEqual(sent_data["voice"]["sessionId"], "new_discord_session")
+        self.assertEqual(sent_data["voice"]["channelId"], "987654321")
 
     def test_on_voice_state_update_no_dispatch_when_event_absent(self):
         """VOICE_STATE_UPDATE does NOT dispatch when event is not yet in _voice_state."""
