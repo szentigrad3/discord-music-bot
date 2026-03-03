@@ -40,6 +40,7 @@ from .enums import RequestMethod
 from .events import TrackEndEvent, TrackStartEvent, TrackExceptionEvent
 from .filters import Filter, Filters
 from .objects import Track
+from .exceptions import NodeException
 from .pool import Node, NodePool
 
 
@@ -161,12 +162,19 @@ class Player(VoiceProtocol):
         endpoint = state['event'].get('endpoint')
         if not endpoint:
             return
+        token = state['event'].get('token')
+        session_id = state.get('sessionId')
+        if not token or not session_id:
+            return
         data = {
-            "token": state['event']['token'],
+            "token": token,
             "endpoint": endpoint,
-            "sessionId": state['sessionId'],
+            "sessionId": session_id,
         }
-        await self.send(method=RequestMethod.PATCH, data={"voice": data})
+        try:
+            await self.send(method=RequestMethod.PATCH, data={"voice": data})
+        except NodeException as e:
+            self._logger.warning(f"Failed to dispatch voice update for guild {self._guild.id}: {e}")
 
     async def on_voice_server_update(self, data: dict) -> None:
         self._voice_state.update({"event": data})
