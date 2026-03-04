@@ -186,6 +186,7 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
 
         Non-Docker deployments cannot resolve the 'yt-cipher' Docker hostname, so the
         installer points Lavalink at the public https://cipher.kikkia.dev/ instance instead.
+        The config is written to ./lavalink/application.yml for non-Docker installs.
         """
         config = self._generate_config(use_docker=False)
         youtube = config["plugins"]["youtube"]
@@ -222,21 +223,37 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
         )
 
     def test_generated_compose_lavalink_mounts_docker_config_to_opt_lavalink(self):
-        """Docker compose must mount application.docker.yml to /opt/lavalink/application.yml.
+        """Docker compose must use a single directory mount ./lavalink:/opt/lavalink.
 
-        Docker: config lives at /opt/lavalink/application.yml inside the container,
-        sourced from ./lavalink/application.docker.yml on the host.
-        Non-Docker: config lives at ./lavalink/application.yml and is used directly.
+        Docker uses /opt/lavalink as its config/data directory (inside the container).
+        Non-Docker uses ./lavalink directly on the host.
+        SPRING_CONFIG_LOCATION tells Lavalink to load application.docker.yml so it
+        does not accidentally use application.yml (the non-Docker config).
         """
         compose = self._generate_docker_compose(enable_lavalink=True)
         lavalink = compose.get("services", {}).get("lavalink", {})
         volumes = lavalink.get("volumes", [])
-        expected_mount = "./lavalink/application.docker.yml:/opt/lavalink/application.yml"
         self.assertIn(
-            expected_mount,
+            "./lavalink:/opt/lavalink",
             volumes,
-            f"Docker lavalink service must mount '{expected_mount}'. "
-            f"Got: {volumes}",
+            f"Docker lavalink service must use single directory mount "
+            f"'./lavalink:/opt/lavalink'. Got: {volumes}",
+        )
+
+    def test_generated_compose_lavalink_sets_spring_config_location(self):
+        """Docker compose must set SPRING_CONFIG_LOCATION to application.docker.yml.
+
+        Without this, Lavalink defaults to application.yml (the non-Docker config),
+        which points remoteCipher at the public instance instead of the internal
+        yt-cipher Docker service.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        lavalink = compose.get("services", {}).get("lavalink", {})
+        environment = lavalink.get("environment", [])
+        self.assertIn(
+            "SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml",
+            environment,
+            f"Docker lavalink service must set SPRING_CONFIG_LOCATION. Got: {environment}",
         )
 
     def test_generated_config_docker_uses_internal_cipher_hostname(self):

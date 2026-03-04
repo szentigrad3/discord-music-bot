@@ -436,10 +436,9 @@ class Installer:
       - _JAVA_OPTIONS=-Xmx1G
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
+      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
     volumes:
-      - ./lavalink/application.docker.yml:/opt/lavalink/application.yml
-      - ./lavalink/plugins:/opt/lavalink/plugins
-      - ./lavalink/logs:/opt/lavalink/logs
+      - ./lavalink:/opt/lavalink
     expose:
       - "{lavalink_port}"
     depends_on:
