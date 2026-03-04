@@ -65,7 +65,7 @@ async def on_ready() -> None:
     # Connect to Lavalink via voicelink (requires bot.user to be available)
     try:
         if 'MAIN' not in NodePool._nodes:
-            await NodePool.create_node(
+            node = await NodePool.create_node(
                 bot=bot,
                 host=settings.lavalink_host,
                 port=settings.lavalink_port,

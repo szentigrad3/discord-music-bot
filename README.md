@@ -292,6 +292,84 @@ sudo systemctl stop discord-music-bot
 sudo systemctl restart discord-music-bot
 ```
 
+## YouTube OAuth Token
+
+Supplying a YouTube OAuth refresh token allows the bot to play age-restricted and
+region-locked content. The steps below walk you through the one-time authorization
+flow provided by [youtube-source](https://github.com/lavalink-devs/youtube-source).
+
+### 1. Enable the OAuth flow
+
+In `lavalink/application.yml` the `oauth` block already has `enabled: true`. Make sure
+`skipInitialization` is `false` (the default in this repo) so that Lavalink triggers
+the authorization URL on its first start without a token:
+
+```yaml
+plugins:
+  youtube:
+    oauth:
+      enabled: true
+      skipInitialization: false
+```
+
+### 2. Start Lavalink and watch the logs
+
+**Docker Compose:**
+
+```bash
+docker compose up lavalink
+```
+
+**Without Docker:**
+
+```bash
+java -jar lavalink/Lavalink.jar
+```
+
+### 3. Open the authorization URL
+
+Watch the Lavalink output for a line like:
+
+```
+Please visit the following URL to authorize: https://www.youtube.com/device?user_code=XXXX-XXXX
+```
+
+Open that URL in your browser, sign in with your Google account, and approve the
+request. You do **not** need a special account — any Google account works.
+
+### 4. Copy the refresh token from the logs
+
+After authorization succeeds, Lavalink prints your refresh token:
+
+```
+Refresh token: <your-token-here>
+```
+
+### 5. Add the token to `settings.json`
+
+```json
+"youtube_refresh_token": "<your-token-here>"
+```
+
+The bot pushes this token to Lavalink automatically on every startup via the REST
+API, so no manual steps are needed after the initial setup.
+
+### 6. (Optional) Persist the token in `application.yml`
+
+You can also bake the token directly into `lavalink/application.yml` so that
+Lavalink loads it even before the bot connects:
+
+```yaml
+plugins:
+  youtube:
+    oauth:
+      enabled: true
+      refreshToken: "<your-token-here>"
+```
+
+Once a valid refresh token is loaded, Lavalink skips the authorization flow
+automatically on future starts regardless of the `skipInitialization` setting.
+
 ## Commands
 
 ### Music
