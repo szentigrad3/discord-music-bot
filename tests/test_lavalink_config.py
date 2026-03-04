@@ -139,22 +139,20 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "for Docker deployments. See https://github.com/kikkia/yt-cipher",
         )
 
-    def test_generated_config_no_remote_cipher_when_not_docker(self):
-        """install.py must NOT generate remoteCipher for non-Docker deployments.
+    def test_generated_config_uses_public_cipher_when_not_docker(self):
+        """install.py must configure remoteCipher to the public yt-cipher instance for non-Docker.
 
-        The yt-cipher service is only available inside Docker Compose.  When
-        Lavalink runs as a standalone JAR the hostname 'yt-cipher' is not
-        resolvable, causing an UnknownHostException that breaks all cipher-based
-        clients (WEB_EMBEDDED_PLAYER, TVHTML5_SIMPLY, TV).  Omitting remoteCipher
-        lets Lavalink fall back to its built-in local cipher manager instead.
+        Non-Docker deployments cannot resolve the 'yt-cipher' Docker hostname, so the
+        installer points Lavalink at the public https://cipher.kikkia.dev/ instance instead.
         """
         config = self._generate_config(use_docker=False)
         youtube = config["plugins"]["youtube"]
         remote_cipher = youtube.get("remoteCipher", {})
-        self.assertFalse(
+        self.assertEqual(
             remote_cipher.get("url", "").strip(),
-            "install.py must NOT write remoteCipher.url for non-Docker deployments; "
-            "the 'yt-cipher' hostname only resolves inside Docker Compose.",
+            "https://cipher.kikkia.dev/",
+            "install.py must write remoteCipher.url = 'https://cipher.kikkia.dev/' "
+            "for non-Docker deployments.",
         )
 
     def test_generated_compose_has_yt_cipher_service(self):

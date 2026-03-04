@@ -560,9 +560,7 @@ class Installer:
                 f"      skipInitialization: false\n"
             )
         # remoteCipher delegates YouTube signature extraction to the yt-cipher
-        # Docker service.  Only configure it when running inside Docker Compose;
-        # in non-Docker deployments the yt-cipher hostname is not resolvable,
-        # which causes an UnknownHostException and breaks all cipher-based clients.
+        # Docker service (internal hostname) or the public instance (non-Docker).
         if use_docker:
             remote_cipher_section = (
                 "    remoteCipher:\n"
@@ -571,7 +569,12 @@ class Installer:
                 " See https://github.com/kikkia/yt-cipher\n"
             )
         else:
-            remote_cipher_section = ""
+            remote_cipher_section = (
+                "    remoteCipher:\n"
+                "      url: \"https://cipher.kikkia.dev/\""
+                " # Public yt-cipher instance for YouTube sig function extraction."
+                " See https://github.com/kikkia/yt-cipher\n"
+            )
         content = f"""\
 server: # REST and WS server
   port: {port}
