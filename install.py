@@ -107,6 +107,19 @@ class ConfigurationManager:
                 "  3. Click \"Show client secret\" and copy the value"
             ),
         },
+        'youtube_refresh_token': {
+            'prompt': 'YouTube Refresh Token (optional)',
+            'default': '',
+            'description': (
+                "YouTube OAuth2 refresh token for authenticated playback (optional).\n"
+                "Providing this token allows the bot to play age-restricted and\n"
+                "region-locked YouTube content.\n\n"
+                "How to get it:\n"
+                "  1. Follow the youtube-source OAuth guide:\n"
+                "     https://github.com/lavalink-devs/youtube-source#oauth-token\n"
+                "  2. Paste your refresh token here, or leave blank to skip"
+            ),
+        },
     }
 
     DASHBOARD_FIELDS: dict[str, dict] = {
@@ -476,6 +489,8 @@ class Installer:
             'spotify_client_id': config.get('spotify_client_id', ''),
             'spotify_client_secret': config.get('spotify_client_secret', ''),
 
+            'youtube_refresh_token': config.get('youtube_refresh_token', ''),
+
             'session_secret': config.get('session_secret', ''),
             'dashboard_port': int(config.get('dashboard_port', 3000)),
 
@@ -510,8 +525,23 @@ class Installer:
         password = config.get('lavalink_password', 'youshallnotpass')
         sp_id     = config.get('spotify_client_id', '')
         sp_secret = config.get('spotify_client_secret', '')
+        yt_token  = config.get('youtube_refresh_token', '')
 
         spotify_enabled = "true" if sp_id else "false"
+        # Escape backslashes and double-quotes so the token is safe inside a
+        # YAML double-quoted scalar.
+        yt_token_escaped = yt_token.replace('\\', '\\\\').replace('"', '\\"')
+        youtube_oauth_section = (
+            f"    oauth:\n"
+            f"      enabled: true\n"
+            f"      refreshToken: \"{yt_token_escaped}\"\n"
+            f"      skipInitialization: true\n"
+        ) if yt_token else (
+            f"    # oauth:\n"
+            f"    #   enabled: false\n"
+            f"    #   refreshToken: \"\"  # Set to enable YouTube OAuth playback\n"
+            f"    #   skipInitialization: true\n"
+        )
         content = f"""\
 server: # REST and WS server
   port: {port}
@@ -549,6 +579,7 @@ plugins:
         # Example: Configuring a client to exclusively be used for video loading and playback.
         playlistLoading: false # Disables loading of playlists and mixes.
         searching: false # Disables the ability to search for videos.
+{youtube_oauth_section}
   lavasrc:
     providers: # Custom providers for track loading. This is the default
       # - "dzisrc:%ISRC%" # Deezer ISRC provider
@@ -772,6 +803,7 @@ logging:
                 config.setdefault('lavalink_password', 'youshallnotpass')
                 config.setdefault('spotify_client_id', '')
                 config.setdefault('spotify_client_secret', '')
+                config.setdefault('youtube_refresh_token', '')
 
             print(f"\n{Colors.BLUE}🌐  Dashboard — web interface for bot management{Colors.END}")
             enable_dashboard = self.cfg_mgr.yes_no(
