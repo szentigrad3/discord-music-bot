@@ -13,9 +13,9 @@ plugins:
     # Clients are queried in the order they are given (so the first client is queried first and so on...)
     clients:
       - MUSIC
-      - IOS
+      - ANDROID_TESTSUITE
       - WEB
-      - TVHTML5_SIMPLY
+      - TVHTML5_SIMPLY_EMBEDDED_PLAYER
   lavasrc:
     providers: # Custom providers for track loading. This is the default
       # - "dzisrc:%ISRC%" # Deezer ISRC provider
