@@ -10,7 +10,9 @@ services:
       - "8001"
 
   lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:latest
+    build:
+      context: ./lavalink
+      dockerfile: ./Dockerfile-lavalink
     restart: unless-stopped
     environment:
       - _JAVA_OPTIONS=-Xmx1G
@@ -25,7 +27,7 @@ services:
     depends_on:
       - yt-cipher
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:2333/version -H \"Authorization: $$LAVALINK_SERVER_PASSWORD\" || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 2333"]
       interval: 10s
       timeout: 5s
       retries: 10
