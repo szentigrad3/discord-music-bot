@@ -1,6 +1,6 @@
 # Discord Music Bot
 
-A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lavalink. Supports YouTube, SoundCloud, Twitch, Spotify, slash commands, prefix commands, audio filters, and a web dashboard.
+A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lavalink. Supports YouTube, SoundCloud, Twitch, Spotify, slash commands, prefix commands, audio filters, and a web dashboard.
 
 ## Features
 
@@ -21,7 +21,7 @@ A feature-rich Discord music bot built with Python 3.12, discord.py v2, and Lava
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.13+
 - **Lavalink** server (included in Docker Compose setup)
 
 ## Setup
