@@ -31,6 +31,8 @@ plugins:
       # Set this if you don't want the OAuth flow to be triggered, if you intend to supply a refresh token
       # later on via REST routes. Initialization is skipped automatically if a valid refresh token is supplied.
       skipInitialization: false
+    remoteCipher:
+      url: "http://yt-cipher:8001" # Remote cipher server for YouTube sig function extraction. See https://github.com/kikkia/yt-cipher
   lavasrc:
     providers: # Custom providers for track loading. This is the default
       # - "dzisrc:%ISRC%" # Deezer ISRC provider
