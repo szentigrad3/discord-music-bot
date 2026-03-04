@@ -876,9 +876,10 @@ logging:
             FileManager.mkdir(install_dir / 'data' / 'sfx')
             print(f"{Colors.GREEN}Created data directories.{Colors.END}")
 
-            # Install Python dependencies
-            self.cfg_mgr._section("📦  INSTALLING PYTHON DEPENDENCIES", Colors.BLUE)
-            self._install_requirements(install_dir)
+            # Install Python dependencies (not needed for Docker; handled inside the image)
+            if not use_docker:
+                self.cfg_mgr._section("📦  INSTALLING PYTHON DEPENDENCIES", Colors.BLUE)
+                self._install_requirements(install_dir)
 
             # Start services
             self.cfg_mgr._section("🚀  STARTING SERVICES", Colors.GREEN)
