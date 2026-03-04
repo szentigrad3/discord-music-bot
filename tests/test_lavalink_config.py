@@ -183,10 +183,11 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
     def test_generated_compose_lavalink_mounts_docker_config_to_opt_lavalink(self):
         """Docker compose must use a single directory mount ./lavalink:/opt/lavalink.
 
-        Docker uses /opt/lavalink as its config/data directory (inside the container).
-        Non-Docker uses ./lavalink directly on the host.
-        SPRING_CONFIG_LOCATION tells Lavalink to load application.docker.yml so it
-        does not accidentally use application.yml (the non-Docker config).
+        Both Docker and non-Docker deployments use ./lavalink/application.yml.
+        Docker uses /opt/lavalink as its config/data directory (inside the container),
+        so the volume mount ./lavalink:/opt/lavalink makes application.yml available
+        at /opt/lavalink/application.yml inside the container.
+        Non-Docker uses ./lavalink/application.yml directly on the host.
         """
         compose = self._generate_docker_compose(enable_lavalink=True)
         lavalink = compose.get("services", {}).get("lavalink", {})
@@ -221,6 +222,47 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             compose.get("services", {}),
             "yt-cipher should not be present when lavalink is disabled.",
         )
+
+    def test_config_written_to_lavalink_application_yml_for_docker(self):
+        """Docker install must write config to ./lavalink/application.yml.
+
+        The docker-compose volume mount ./lavalink:/opt/lavalink makes this file
+        available inside the container at /opt/lavalink/application.yml.
+        """
+        config = {
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+            'spotify_client_id': '',
+            'spotify_client_secret': '',
+            'youtube_refresh_token': '',
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Installer._write_lavalink_config(Path(tmpdir), config, use_docker=True)
+            expected = Path(tmpdir) / 'lavalink' / 'application.yml'
+            self.assertTrue(
+                expected.exists(),
+                f"Docker install must write config to ./lavalink/application.yml "
+                f"(maps to /opt/lavalink/application.yml inside the container). "
+                f"Expected file not found: {expected}",
+            )
+
+    def test_config_written_to_lavalink_application_yml_for_non_docker(self):
+        """Non-Docker install must write config to ./lavalink/application.yml."""
+        config = {
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+            'spotify_client_id': '',
+            'spotify_client_secret': '',
+            'youtube_refresh_token': '',
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Installer._write_lavalink_config(Path(tmpdir), config, use_docker=False)
+            expected = Path(tmpdir) / 'lavalink' / 'application.yml'
+            self.assertTrue(
+                expected.exists(),
+                f"Non-Docker install must write config to ./lavalink/application.yml. "
+                f"Expected file not found: {expected}",
+            )
 
 
 if __name__ == "__main__":

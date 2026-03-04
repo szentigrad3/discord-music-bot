@@ -780,7 +780,10 @@ logging:
 
         dest = lavalink_dir / 'application.yml'
         dest.write_text(content, encoding='utf-8')
-        print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
+        if use_docker:
+            print(f"{Colors.GREEN}Wrote lavalink/application.yml (maps to /opt/lavalink/application.yml inside Docker){Colors.END}")
+        else:
+            print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
 
     # ------------------------------------------------------------------ run
 
