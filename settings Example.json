@@ -7,6 +7,8 @@
     "spotify_client_id": "",
     "spotify_client_secret": "",
 
+    "youtube_refresh_token": "",
+
     "session_secret": "change_this_to_a_random_secret_string",
     "dashboard_port": 3000,
 
