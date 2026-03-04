@@ -66,6 +66,22 @@ class TestLavalinkConfig(unittest.TestCase):
             "See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
         )
 
+    def test_remote_cipher_configured(self):
+        """A remoteCipher URL must be configured to handle YouTube sig function extraction.
+
+        The TV (TVHTML5) client fails with 'Must find sig function from script' when
+        YouTube changes their obfuscated player script. Configuring a remote cipher server
+        (https://github.com/kikkia/yt-cipher) delegates this work to an external service
+        that uses yt-dlp to reliably extract signature functions.
+        """
+        youtube = self._get_youtube_config()
+        remote_cipher = youtube.get("remoteCipher", {})
+        self.assertTrue(
+            remote_cipher.get("url", "").strip(),
+            "plugins.youtube.remoteCipher.url must be set to a yt-cipher server URL. "
+            "See https://github.com/kikkia/yt-cipher",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

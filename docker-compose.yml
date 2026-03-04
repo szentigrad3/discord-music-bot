@@ -1,4 +1,14 @@
 services:
+  yt-cipher:
+    # ghcr.io/kikkia/yt-cipher has no versioned release tags; 'master' is the only available tag.
+    # The image uses a distroless base so CMD-SHELL healthchecks are not supported.
+    # Lavalink only contacts yt-cipher when deciphering track signatures, so it does not
+    # need yt-cipher to be fully ready before it starts.
+    image: ghcr.io/kikkia/yt-cipher:master
+    restart: unless-stopped
+    expose:
+      - "8001"
+
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:latest
     restart: unless-stopped
@@ -12,6 +22,8 @@ services:
       - ./lavalink/logs:/opt/Lavalink/logs
     expose:
       - "2333"
+    depends_on:
+      - yt-cipher
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:2333/version -H \"Authorization: $$LAVALINK_SERVER_PASSWORD\" || exit 1"]
       interval: 10s
