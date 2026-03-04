@@ -531,17 +531,20 @@ class Installer:
         # Escape backslashes and double-quotes so the token is safe inside a
         # YAML double-quoted scalar.
         yt_token_escaped = yt_token.replace('\\', '\\\\').replace('"', '\\"')
-        youtube_oauth_section = (
-            f"    oauth:\n"
-            f"      enabled: true\n"
-            f"      refreshToken: \"{yt_token_escaped}\"\n"
-            f"      skipInitialization: true\n"
-        ) if yt_token else (
-            f"    # oauth:\n"
-            f"    #   enabled: false\n"
-            f"    #   refreshToken: \"\"  # Set to enable YouTube OAuth playback\n"
-            f"    #   skipInitialization: true\n"
-        )
+        if yt_token:
+            youtube_oauth_section = (
+                f"    oauth:\n"
+                f"      enabled: true\n"
+                f"      refreshToken: \"{yt_token_escaped}\"\n"
+                f"      skipInitialization: true\n"
+            )
+        else:
+            youtube_oauth_section = (
+                f"    oauth:\n"
+                f"      enabled: true\n"
+                f"      # refreshToken: \"your refresh token, only supply this if you have one!\"\n"
+                f"      skipInitialization: false\n"
+            )
         content = f"""\
 server: # REST and WS server
   port: {port}
@@ -562,7 +565,8 @@ plugins:
       - ANDROID_MUSIC
       - WEB
       - WEBEMBEDDED
-      - TVHTML5EMBEDDED
+      - TVHTML5_SIMPLY
+      - TV
     # The below section of the config allows setting specific options for each client, such as the requests they will handle.
     # If an option, or client, is unspecified, then the default option value/client values will be used instead.
     # If a client is configured, but is not registered above, the options for that client will be ignored.
