@@ -9,7 +9,6 @@ from pathlib import Path
 import aiohttp
 import discord
 from bot.voicelink import NodePool
-from bot.voicelink.ratelimit import YTToken
 from discord.ext import commands
 
 from bot.db import get_guild_settings, init_db
@@ -73,12 +72,6 @@ async def on_ready() -> None:
                 identifier='MAIN',
             )
             logger.info('Lavalink node connected.')
-            if settings.youtube_refresh_token:
-                try:
-                    await node.update_refresh_yt_access_token(YTToken(settings.youtube_refresh_token))
-                    logger.info('YouTube OAuth refresh token configured.')
-                except Exception as e:
-                    logger.error('Failed to set YouTube OAuth token: %s', e)
     except Exception as e:
         logger.error('Failed to connect to Lavalink node: %s', e)
 

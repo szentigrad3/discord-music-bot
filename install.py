@@ -504,8 +504,6 @@ class Installer:
             'spotify_client_id': config.get('spotify_client_id', ''),
             'spotify_client_secret': config.get('spotify_client_secret', ''),
 
-            'youtube_refresh_token': config.get('youtube_refresh_token', ''),
-
             'session_secret': config.get('session_secret', ''),
             'dashboard_port': int(config.get('dashboard_port', 3000)),
 
@@ -823,7 +821,6 @@ logging:
                 config.setdefault('lavalink_password', 'youshallnotpass')
                 config.setdefault('spotify_client_id', '')
                 config.setdefault('spotify_client_secret', '')
-                config.setdefault('youtube_refresh_token', '')
 
             print(f"\n{Colors.BLUE}🌐  Dashboard — web interface for bot management{Colors.END}")
             enable_dashboard = self.cfg_mgr.yes_no(

@@ -345,19 +345,10 @@ After authorization succeeds, Lavalink prints your refresh token:
 Refresh token: <your-token-here>
 ```
 
-### 5. Add the token to `settings.json`
+### 5. Persist the token in `application.yml`
 
-```json
-"youtube_refresh_token": "<your-token-here>"
-```
-
-The bot pushes this token to Lavalink automatically on every startup via the REST
-API, so no manual steps are needed after the initial setup.
-
-### 6. (Optional) Persist the token in `application.yml`
-
-You can also bake the token directly into `lavalink/application.yml` so that
-Lavalink loads it even before the bot connects:
+Add the refresh token to `lavalink/application.yml` so that Lavalink loads it on
+every startup without re-running the authorization flow:
 
 ```yaml
 plugins:
@@ -368,7 +359,7 @@ plugins:
 ```
 
 Once a valid refresh token is loaded, Lavalink skips the authorization flow
-automatically on future starts regardless of the `skipInitialization` setting.
+automatically on future starts.
 
 ## Commands
 

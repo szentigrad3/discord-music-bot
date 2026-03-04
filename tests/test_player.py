@@ -518,22 +518,6 @@ class TestYouTubeOAuth(unittest.TestCase):
         self.assertEqual(captured['method'], "POST")
         self.assertEqual(captured['json'], {"refreshToken": "my-refresh-token"})
 
-    def test_settings_reads_youtube_refresh_token(self):
-        """Settings class must expose youtube_refresh_token from settings data."""
-        from bot.settings import Settings
-        data = {
-            "token": "tok",
-            "youtube_refresh_token": "yt-oauth-refresh-abc",
-        }
-        s = Settings(data)
-        self.assertEqual(s.youtube_refresh_token, "yt-oauth-refresh-abc")
-
-    def test_settings_youtube_refresh_token_defaults_to_empty(self):
-        """youtube_refresh_token must default to empty string when not in settings."""
-        from bot.settings import Settings
-        s = Settings({"token": "tok"})
-        self.assertEqual(s.youtube_refresh_token, "")
-
 
 if __name__ == "__main__":
     unittest.main()
