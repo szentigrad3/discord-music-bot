@@ -92,7 +92,7 @@ class TestLavalinkConfig(unittest.TestCase):
 class TestInstallerGeneratedConfig(unittest.TestCase):
     """Validates that install.py generates Lavalink configs with all required settings."""
 
-    def _generate_config(self, config_overrides=None):
+    def _generate_config(self, config_overrides=None, use_docker=True):
         """Generate a lavalink application.yml using Installer and return parsed YAML."""
         config = {
             'lavalink_port': '2333',
@@ -104,7 +104,7 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
         if config_overrides:
             config.update(config_overrides)
         with tempfile.TemporaryDirectory() as tmpdir:
-            Installer._write_lavalink_config(Path(tmpdir), config)
+            Installer._write_lavalink_config(Path(tmpdir), config, use_docker=use_docker)
             config_path = Path(tmpdir) / 'lavalink' / 'application.yml'
             with open(config_path, 'r') as f:
                 return yaml.safe_load(f)
@@ -123,20 +123,38 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
                 return yaml.safe_load(f)
 
     def test_generated_config_has_remote_cipher(self):
-        """install.py must generate application.yml with remoteCipher configured.
+        """install.py must generate application.yml with remoteCipher configured when using Docker.
 
         Without remoteCipher, the TV (TVHTML5) client falls back to LocalSignatureCipherManager
         which fails with 'Must find sig function from script' when YouTube changes their
         obfuscated player script. The yt-cipher service is deployed in docker-compose but
         must be wired up via remoteCipher in application.yml.
         """
-        config = self._generate_config()
+        config = self._generate_config(use_docker=True)
         youtube = config["plugins"]["youtube"]
         remote_cipher = youtube.get("remoteCipher", {})
         self.assertTrue(
             remote_cipher.get("url", "").strip(),
-            "install.py must write plugins.youtube.remoteCipher.url to application.yml. "
-            "See https://github.com/kikkia/yt-cipher",
+            "install.py must write plugins.youtube.remoteCipher.url to application.yml "
+            "for Docker deployments. See https://github.com/kikkia/yt-cipher",
+        )
+
+    def test_generated_config_no_remote_cipher_when_not_docker(self):
+        """install.py must NOT generate remoteCipher for non-Docker deployments.
+
+        The yt-cipher service is only available inside Docker Compose.  When
+        Lavalink runs as a standalone JAR the hostname 'yt-cipher' is not
+        resolvable, causing an UnknownHostException that breaks all cipher-based
+        clients (WEB_EMBEDDED_PLAYER, TVHTML5_SIMPLY, TV).  Omitting remoteCipher
+        lets Lavalink fall back to its built-in local cipher manager instead.
+        """
+        config = self._generate_config(use_docker=False)
+        youtube = config["plugins"]["youtube"]
+        remote_cipher = youtube.get("remoteCipher", {})
+        self.assertFalse(
+            remote_cipher.get("url", "").strip(),
+            "install.py must NOT write remoteCipher.url for non-Docker deployments; "
+            "the 'yt-cipher' hostname only resolves inside Docker Compose.",
         )
 
     def test_generated_compose_has_yt_cipher_service(self):
