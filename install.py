@@ -416,6 +416,18 @@ class Installer:
         lavalink_password = config.get('lavalink_password', 'youshallnotpass')
         dashboard_port    = config.get('dashboard_port', '3000')
 
+        yt_cipher_service = """
+  yt-cipher:
+    # ghcr.io/kikkia/yt-cipher has no versioned release tags; 'master' is the only available tag.
+    # The image uses a distroless base so CMD-SHELL healthchecks are not supported.
+    # Lavalink only contacts yt-cipher when deciphering track signatures, so it does not
+    # need yt-cipher to be fully ready before it starts.
+    image: ghcr.io/kikkia/yt-cipher:master
+    restart: unless-stopped
+    expose:
+      - "8001"
+""" if enable_lavalink else ''
+
         lavalink_service = f"""
   lavalink:
     image: {Installer.LAVALINK_IMAGE}
@@ -430,9 +442,11 @@ class Installer:
       - ./lavalink/logs:/opt/Lavalink/logs
     expose:
       - "{lavalink_port}"
+    depends_on:
+      - yt-cipher
     healthcheck:
       # curl is available in the official Lavalink Docker image
-      test: ["CMD-SHELL", "curl -sf http://localhost:{lavalink_port}/version -H \\"Authorization: $${LAVALINK_SERVER_PASSWORD}\\" || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:{lavalink_port}/version -H \\"Authorization: $$LAVALINK_SERVER_PASSWORD\\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -468,6 +482,7 @@ class Installer:
             f"    ports:\n"
             f"      - \"{dashboard_port}:{dashboard_port}\"\n"
             f"{bot_depends}\n"
+            f"{yt_cipher_service}"
             f"{lavalink_service}"
             f"{dashboard_service}"
         )
@@ -583,7 +598,8 @@ plugins:
         # Example: Configuring a client to exclusively be used for video loading and playback.
         playlistLoading: false # Disables loading of playlists and mixes.
         searching: false # Disables the ability to search for videos.
-{youtube_oauth_section}
+{youtube_oauth_section}    remoteCipher:
+      url: "http://yt-cipher:8001" # Remote cipher server for YouTube sig function extraction. See https://github.com/kikkia/yt-cipher
   lavasrc:
     providers: # Custom providers for track loading. This is the default
       # - "dzisrc:%ISRC%" # Deezer ISRC provider
