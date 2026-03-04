@@ -66,6 +66,17 @@ class ConfigurationManager:
                 "  3. In \"General Information\" copy the \"Application ID\""
             ),
         },
+        'discord_client_secret': {
+            'prompt': 'Discord Client Secret',
+            'description': (
+                "Your Discord application's client secret (OAuth2).\n\n"
+                "How to get it:\n"
+                "  1. Go to https://discord.com/developers/applications\n"
+                "  2. Select your bot application\n"
+                "  3. Go to \"OAuth2\" → \"General\"\n"
+                "  4. Click \"Reset Secret\" and copy the value"
+            ),
+        },
     }
 
     LAVALINK_FIELDS: dict[str, dict] = {
@@ -129,17 +140,6 @@ class ConfigurationManager:
             'description': (
                 "Port the web dashboard will listen on.\n"
                 "Default: 3000 — access at http://localhost:3000"
-            ),
-        },
-        'discord_client_secret': {
-            'prompt': 'Discord OAuth2 Client Secret (for dashboard login)',
-            'default': '',
-            'description': (
-                "Discord OAuth2 client secret used by the dashboard.\n\n"
-                "How to get it:\n"
-                "  1. Go to https://discord.com/developers/applications\n"
-                "  2. Open your app → OAuth2 → General\n"
-                "  3. Click \"Reset Secret\" and copy the value"
             ),
         },
         'discord_callback_url': {
@@ -437,6 +437,8 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
       - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
+      # Quoted because the trailing colon would otherwise be parsed as a YAML mapping key.
+      - "SPRING_CONFIG_IMPORT=optional:configserver:"
     volumes:
       - ./lavalink:/opt/lavalink
     expose:
@@ -854,7 +856,6 @@ logging:
                 config.update(dashboard_config)
             else:
                 config.setdefault('dashboard_port', '3000')
-                config.setdefault('discord_client_secret', '')
                 config.setdefault('discord_callback_url', 'http://localhost:3000/auth/discord/callback')
                 config.setdefault('session_secret', '')
 
