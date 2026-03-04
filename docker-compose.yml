@@ -18,7 +18,6 @@ services:
       - _JAVA_OPTIONS=-Xmx1G
       - SERVER_PORT=2333
       - LAVALINK_SERVER_PASSWORD=youshallnotpass
-      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
     volumes:
       - ./lavalink:/opt/lavalink
     expose:
