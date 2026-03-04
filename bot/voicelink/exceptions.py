@@ -66,19 +66,24 @@ class FilterInvalidArgument(VoicelinkException):
     """An invalid argument was passed to a filter."""
     pass
 
+
 class FilterTagAlreadyInUse(VoicelinkException):
     """A filter with a tag is already in use by another filter"""
     pass
+
 
 class FilterTagInvalid(VoicelinkException):
     """An invalid tag was passed or Voicelink was unable to find a filter tag"""
     pass
 
+
 class QueueFull(VoicelinkException):
     pass
 
+
 class OutofList(VoicelinkException):
     pass
+
 
 class DuplicateTrack(VoicelinkException):
     pass

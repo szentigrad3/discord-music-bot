@@ -87,7 +87,7 @@ class WebSocketClosedPayload:
     def __init__(self, data: dict):
         self.guild = NodePool.get_node().bot.get_guild(int(data["guildId"]))
         self.code: int = data["code"]
-        self.reason: str = data["code"]
+        self.reason: str = data["reason"]
         self.by_remote: bool = data["byRemote"]
 
 

@@ -266,7 +266,7 @@ class Node:
         try:
             if self._available:
                 self._logger.info(f"Node [{self._identifier}] already connected.")
-                return
+                return self
 
             self._websocket = await self._session.ws_connect(
                 self._websocket_uri, headers=self._headers, heartbeat=self._heartbeat

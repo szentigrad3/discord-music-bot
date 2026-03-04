@@ -90,7 +90,7 @@ class Utility(commands.Cog):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f'https://lrclib.net/api/search',
+                    'https://lrclib.net/api/search',
                     params={'q': query},
                 ) as resp:
                     if not resp.ok:
