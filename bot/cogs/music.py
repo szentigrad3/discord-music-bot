@@ -55,7 +55,7 @@ class Music(commands.Cog):
             # For prefix commands we just send a follow-up
             return await ctx.reply(content, **kwargs)
 
-        guild = ctx.guild if is_inter else ctx.guild
+        guild = ctx.guild
         member = ctx.user if is_inter else ctx.author
         lang = await self._get_lang(guild)
 
