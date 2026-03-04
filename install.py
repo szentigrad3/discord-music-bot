@@ -580,7 +580,7 @@ server: # REST and WS server
   port: {port}
   address: 0.0.0.0
   http2:
-    enabled: false # Disabled: wavelink uses HTTP/1.1 WebSocket; h2c causes empty-error connection failures
+    enabled: false # Disabled: voicelink uses HTTP/1.1 WebSocket; h2c causes empty-error connection failures
 plugins:
   youtube:
     enabled: true # Whether this source can be used.
