@@ -42,9 +42,6 @@ class Settings:
         self.spotify_client_id: str = data.get('spotify_client_id', '')
         self.spotify_client_secret: str = data.get('spotify_client_secret', '')
 
-        # YouTube OAuth (optional) — supply a refresh token to enable OAuth playback
-        self.youtube_refresh_token: str = data.get('youtube_refresh_token', '')
-
         # Dashboard
         self.session_secret: str = data.get('session_secret', '')
         self.dashboard_port: int = int(data.get('dashboard_port', 3000))
