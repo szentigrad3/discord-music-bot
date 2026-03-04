@@ -105,7 +105,8 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             config.update(config_overrides)
         with tempfile.TemporaryDirectory() as tmpdir:
             Installer._write_lavalink_config(Path(tmpdir), config, use_docker=use_docker)
-            config_path = Path(tmpdir) / 'lavalink' / 'application.yml'
+            filename = 'application.docker.yml' if use_docker else 'application.yml'
+            config_path = Path(tmpdir) / 'lavalink' / filename
             with open(config_path, 'r') as f:
                 return yaml.safe_load(f)
 
