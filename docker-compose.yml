@@ -5,6 +5,7 @@ services:
     # Lavalink only contacts yt-cipher when deciphering track signatures, so it does not
     # need yt-cipher to be fully ready before it starts.
     image: ghcr.io/kikkia/yt-cipher:master
+    pull_policy: always # Always pull to get the latest YouTube cipher solutions.
     restart: unless-stopped
     expose:
       - "8001"
