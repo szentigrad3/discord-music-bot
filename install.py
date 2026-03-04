@@ -533,6 +533,7 @@ class Installer:
     def _write_lavalink_config(
         install_dir: Path,
         config: dict[str, Any],
+        use_docker: bool = True,
     ) -> None:
         port     = config.get('lavalink_port', '2333')
         password = config.get('lavalink_password', 'youshallnotpass')
@@ -558,6 +559,19 @@ class Installer:
                 f"      # refreshToken: \"your refresh token, only supply this if you have one!\"\n"
                 f"      skipInitialization: false\n"
             )
+        # remoteCipher delegates YouTube signature extraction to the yt-cipher
+        # Docker service.  Only configure it when running inside Docker Compose;
+        # in non-Docker deployments the yt-cipher hostname is not resolvable,
+        # which causes an UnknownHostException and breaks all cipher-based clients.
+        if use_docker:
+            remote_cipher_section = (
+                "    remoteCipher:\n"
+                "      url: \"http://yt-cipher:8001\""
+                " # Remote cipher server for YouTube sig function extraction."
+                " See https://github.com/kikkia/yt-cipher\n"
+            )
+        else:
+            remote_cipher_section = ""
         content = f"""\
 server: # REST and WS server
   port: {port}
@@ -596,9 +610,7 @@ plugins:
         # Example: Configuring a client to exclusively be used for video loading and playback.
         playlistLoading: false # Disables loading of playlists and mixes.
         searching: false # Disables the ability to search for videos.
-{youtube_oauth_section}    remoteCipher:
-      url: "http://yt-cipher:8001" # Remote cipher server for YouTube sig function extraction. See https://github.com/kikkia/yt-cipher
-  lavasrc:
+{youtube_oauth_section}{remote_cipher_section}  lavasrc:
     providers: # Custom providers for track loading. This is the default
       # - "dzisrc:%ISRC%" # Deezer ISRC provider
       # - "dzsearch:%QUERY%" # Deezer search provider
@@ -843,7 +855,7 @@ logging:
             if use_docker:
                 self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
             if enable_lavalink:
-                self._write_lavalink_config(install_dir, config)
+                self._write_lavalink_config(install_dir, config, use_docker=use_docker)
                 jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
                 if not jar_dest.exists():
                     self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
