@@ -16,10 +16,6 @@ LAVALINK_CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), "..", "lavalink", "application.yml"
 )
 
-LAVALINK_DOCKER_CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "lavalink", "application.docker.yml"
-)
-
 # The only OAuth-compatible client in the youtube-source plugin.
 # See: https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients
 OAUTH_COMPATIBLE_CLIENTS = {"TV"}
@@ -93,43 +89,6 @@ class TestLavalinkConfig(unittest.TestCase):
         )
 
 
-class TestLavalinkDockerConfig(unittest.TestCase):
-    """Validates the Docker-specific lavalink/application.docker.yml is correctly configured."""
-
-    def setUp(self):
-        with open(LAVALINK_DOCKER_CONFIG_PATH, "r") as f:
-            self.config = yaml.safe_load(f)
-
-    def _get_youtube_config(self):
-        return self.config["plugins"]["youtube"]
-
-    def test_remote_cipher_uses_internal_docker_hostname(self):
-        """application.docker.yml must point remoteCipher at the internal yt-cipher Docker service.
-
-        The Docker Compose network resolves 'yt-cipher' to the yt-cipher container.
-        Using the public URL here would bypass the local yt-cipher service.
-        """
-        youtube = self._get_youtube_config()
-        remote_cipher = youtube.get("remoteCipher", {})
-        self.assertEqual(
-            remote_cipher.get("url", "").strip(),
-            "http://yt-cipher:8001",
-            "application.docker.yml remoteCipher.url must use the internal Docker "
-            "service hostname 'http://yt-cipher:8001'.",
-        )
-
-    def test_youtube_source_enabled(self):
-        """The youtube-source plugin must be enabled in the Docker config."""
-        youtube = self._get_youtube_config()
-        self.assertTrue(youtube.get("enabled", False))
-
-    def test_tv_client_in_clients_list(self):
-        """TV client must be present in the Docker config to support OAuth-based playback."""
-        youtube = self._get_youtube_config()
-        clients = youtube.get("clients", [])
-        self.assertIn("TV", clients)
-
-
 class TestInstallerGeneratedConfig(unittest.TestCase):
     """Validates that install.py generates Lavalink configs with all required settings."""
 
@@ -146,8 +105,7 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             config.update(config_overrides)
         with tempfile.TemporaryDirectory() as tmpdir:
             Installer._write_lavalink_config(Path(tmpdir), config, use_docker=use_docker)
-            filename = 'application.docker.yml' if use_docker else 'application.yml'
-            config_path = Path(tmpdir) / 'lavalink' / filename
+            config_path = Path(tmpdir) / 'lavalink' / 'application.yml'
             with open(config_path, 'r') as f:
                 return yaml.safe_load(f)
 
@@ -240,24 +198,8 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             f"'./lavalink:/opt/lavalink'. Got: {volumes}",
         )
 
-    def test_generated_compose_lavalink_sets_spring_config_location(self):
-        """Docker compose must set SPRING_CONFIG_LOCATION to application.docker.yml.
-
-        Without this, Lavalink defaults to application.yml (the non-Docker config),
-        which points remoteCipher at the public instance instead of the internal
-        yt-cipher Docker service.
-        """
-        compose = self._generate_docker_compose(enable_lavalink=True)
-        lavalink = compose.get("services", {}).get("lavalink", {})
-        environment = lavalink.get("environment", [])
-        self.assertIn(
-            "SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml",
-            environment,
-            f"Docker lavalink service must set SPRING_CONFIG_LOCATION. Got: {environment}",
-        )
-
     def test_generated_config_docker_uses_internal_cipher_hostname(self):
-        """Docker install must write application.docker.yml with the internal yt-cipher hostname.
+        """Docker install must write application.yml with the internal yt-cipher hostname.
 
         Inside Docker Compose the 'yt-cipher' hostname resolves to the yt-cipher container.
         """
@@ -268,7 +210,7 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             remote_cipher.get("url", "").strip(),
             "http://yt-cipher:8001",
             "Docker install.py must write remoteCipher.url = 'http://yt-cipher:8001' "
-            "in application.docker.yml.",
+            "in application.yml.",
         )
 
     def test_generated_compose_no_yt_cipher_when_lavalink_disabled(self):

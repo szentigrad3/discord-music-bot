@@ -436,7 +436,6 @@ class Installer:
       - _JAVA_OPTIONS=-Xmx1G
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
-      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
     volumes:
       - ./lavalink:/opt/lavalink
     expose:
@@ -779,9 +778,9 @@ logging:
         FileManager.mkdir(lavalink_dir / 'logs')
         FileManager.mkdir(lavalink_dir / 'plugins')
 
-        dest = lavalink_dir / ('application.docker.yml' if use_docker else 'application.yml')
+        dest = lavalink_dir / 'application.yml'
         dest.write_text(content, encoding='utf-8')
-        print(f"{Colors.GREEN}Wrote lavalink/{'application.docker.yml' if use_docker else 'application.yml'}{Colors.END}")
+        print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
 
     # ------------------------------------------------------------------ run
 

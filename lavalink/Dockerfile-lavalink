@@ -3,9 +3,7 @@ FROM eclipse-temurin:24-jre-noble
 RUN groupadd -g 322 lavalink && \
     useradd -u 322 -g lavalink -m -d /opt/lavalink lavalink
 
-# Store the jar outside the bind-mounted config directory so that
-# mounting ./lavalink:/opt/lavalink at runtime does not shadow it.
-WORKDIR /opt/lavalink-bin
+WORKDIR /opt/lavalink
 
 ADD --chown=lavalink:lavalink https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar .
 
@@ -13,9 +11,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
-# Config, plugins and logs live in /opt/lavalink (bind-mounted from ./lavalink/).
-WORKDIR /opt/lavalink
-
 USER lavalink
 
-ENTRYPOINT ["java", "-Djdk.tls.client.protocols=TLSv1.2,TLSv1.3", "-jar", "/opt/lavalink-bin/Lavalink.jar"]
+ENTRYPOINT ["java", "-Djdk.tls.client.protocols=TLSv1.2,TLSv1.3", "-jar", "/opt/lavalink/Lavalink.jar"]
