@@ -269,6 +269,64 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "file:/opt/lavalink/application.docker.yml so it uses the Docker-specific config.",
         )
 
+    def test_generated_compose_lavalink_has_spring_config_import(self):
+        """Docker compose lavalink service must set SPRING_CONFIG_IMPORT=optional:configserver:.
+
+        Without this, newer Lavalink versions fail to start with:
+        'No spring.config.import property has been defined'
+        Setting it to 'optional:configserver:' disables the Spring Cloud Config import check.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        lavalink = compose.get("services", {}).get("lavalink", {})
+        env = lavalink.get("environment", [])
+        self.assertIn(
+            "SPRING_CONFIG_IMPORT=optional:configserver:",
+            env,
+            "Docker lavalink service must set SPRING_CONFIG_IMPORT=optional:configserver: "
+            "to prevent Spring Cloud Config startup failure.",
+        )
+
+
+DOCKER_COMPOSE_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "docker-compose.yml"
+)
+
+
+class TestDockerCompose(unittest.TestCase):
+    """Validates the committed docker-compose.yml is correctly configured."""
+
+    def setUp(self):
+        with open(DOCKER_COMPOSE_PATH, "r") as f:
+            self.compose = yaml.safe_load(f)
+
+    def _get_lavalink_env(self):
+        return self.compose["services"]["lavalink"].get("environment", [])
+
+    def test_lavalink_has_spring_config_import(self):
+        """The committed docker-compose.yml lavalink service must set SPRING_CONFIG_IMPORT.
+
+        Without SPRING_CONFIG_IMPORT=optional:configserver:, newer Lavalink versions fail to
+        start with 'No spring.config.import property has been defined'.
+        """
+        env = self._get_lavalink_env()
+        self.assertIn(
+            "SPRING_CONFIG_IMPORT=optional:configserver:",
+            env,
+            "docker-compose.yml lavalink service must set "
+            "SPRING_CONFIG_IMPORT=optional:configserver: to prevent Spring Cloud Config "
+            "startup failure.",
+        )
+
+    def test_lavalink_has_spring_config_location(self):
+        """The committed docker-compose.yml lavalink service must set SPRING_CONFIG_LOCATION."""
+        env = self._get_lavalink_env()
+        self.assertIn(
+            "SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml",
+            env,
+            "docker-compose.yml lavalink service must set SPRING_CONFIG_LOCATION to "
+            "file:/opt/lavalink/application.docker.yml.",
+        )
+
 
 class TestLavalinkDockerConfig(unittest.TestCase):
     """Validates the committed lavalink/application.docker.yml is correctly configured for Docker."""
