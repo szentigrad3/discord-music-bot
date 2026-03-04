@@ -437,7 +437,7 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
     volumes:
-      - ./lavalink/application.yml:/opt/lavalink/application.yml
+      - ./lavalink/application.docker.yml:/opt/lavalink/application.yml
       - ./lavalink/plugins:/opt/lavalink/plugins
       - ./lavalink/logs:/opt/lavalink/logs
     expose:
@@ -780,9 +780,9 @@ logging:
         FileManager.mkdir(lavalink_dir / 'logs')
         FileManager.mkdir(lavalink_dir / 'plugins')
 
-        dest = lavalink_dir / 'application.yml'
+        dest = lavalink_dir / ('application.docker.yml' if use_docker else 'application.yml')
         dest.write_text(content, encoding='utf-8')
-        print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
+        print(f"{Colors.GREEN}Wrote lavalink/{'application.docker.yml' if use_docker else 'application.yml'}{Colors.END}")
 
     # ------------------------------------------------------------------ run
 
