@@ -1,9 +1,15 @@
 """Tests for Lavalink application.yml configuration."""
 
 import os
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from install import Installer  # noqa: E402
 
 
 LAVALINK_CONFIG_PATH = os.path.join(
@@ -80,6 +86,90 @@ class TestLavalinkConfig(unittest.TestCase):
             remote_cipher.get("url", "").strip(),
             "plugins.youtube.remoteCipher.url must be set to a yt-cipher server URL. "
             "See https://github.com/kikkia/yt-cipher",
+        )
+
+
+class TestInstallerGeneratedConfig(unittest.TestCase):
+    """Validates that install.py generates Lavalink configs with all required settings."""
+
+    def _generate_config(self, config_overrides=None):
+        """Generate a lavalink application.yml using Installer and return parsed YAML."""
+        config = {
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+            'spotify_client_id': '',
+            'spotify_client_secret': '',
+            'youtube_refresh_token': '',
+        }
+        if config_overrides:
+            config.update(config_overrides)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Installer._write_lavalink_config(Path(tmpdir), config)
+            config_path = Path(tmpdir) / 'lavalink' / 'application.yml'
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+
+    def _generate_docker_compose(self, enable_lavalink=True, enable_dashboard=False):
+        """Generate a docker-compose.yml using Installer and return its contents."""
+        config = {
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+            'dashboard_port': '3000',
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Installer._write_docker_compose(Path(tmpdir), config, enable_lavalink, enable_dashboard)
+            compose_path = Path(tmpdir) / 'docker-compose.yml'
+            with open(compose_path, 'r') as f:
+                return yaml.safe_load(f)
+
+    def test_generated_config_has_remote_cipher(self):
+        """install.py must generate application.yml with remoteCipher configured.
+
+        Without remoteCipher, the TV (TVHTML5) client falls back to LocalSignatureCipherManager
+        which fails with 'Must find sig function from script' when YouTube changes their
+        obfuscated player script. The yt-cipher service is deployed in docker-compose but
+        must be wired up via remoteCipher in application.yml.
+        """
+        config = self._generate_config()
+        youtube = config["plugins"]["youtube"]
+        remote_cipher = youtube.get("remoteCipher", {})
+        self.assertTrue(
+            remote_cipher.get("url", "").strip(),
+            "install.py must write plugins.youtube.remoteCipher.url to application.yml. "
+            "See https://github.com/kikkia/yt-cipher",
+        )
+
+    def test_generated_compose_has_yt_cipher_service(self):
+        """install.py must generate docker-compose.yml with yt-cipher service when lavalink is enabled.
+
+        The yt-cipher service provides remote signature cipher resolution for the TV (TVHTML5)
+        client, preventing 'Must find sig function from script' errors.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        self.assertIn(
+            "yt-cipher",
+            compose.get("services", {}),
+            "docker-compose.yml must include the yt-cipher service when lavalink is enabled.",
+        )
+
+    def test_generated_compose_lavalink_depends_on_yt_cipher(self):
+        """The lavalink service must depend on yt-cipher so it starts after the cipher server."""
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        lavalink = compose.get("services", {}).get("lavalink", {})
+        depends_on = lavalink.get("depends_on", [])
+        self.assertIn(
+            "yt-cipher",
+            depends_on,
+            "The lavalink service must list yt-cipher in depends_on.",
+        )
+
+    def test_generated_compose_no_yt_cipher_when_lavalink_disabled(self):
+        """When lavalink is disabled, yt-cipher should not be included in docker-compose."""
+        compose = self._generate_docker_compose(enable_lavalink=False)
+        self.assertNotIn(
+            "yt-cipher",
+            compose.get("services", {}),
+            "yt-cipher should not be present when lavalink is disabled.",
         )
 
 
