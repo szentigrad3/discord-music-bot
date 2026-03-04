@@ -15,6 +15,9 @@ from install import Installer  # noqa: E402
 LAVALINK_CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), "..", "lavalink", "application.yml"
 )
+LAVALINK_DOCKER_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "lavalink", "application.docker.yml"
+)
 
 # The only OAuth-compatible client in the youtube-source plugin.
 # See: https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients
@@ -93,7 +96,8 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
     """Validates that install.py generates Lavalink configs with all required settings."""
 
     def _generate_config(self, config_overrides=None, use_docker=True):
-        """Generate a lavalink application.yml using Installer and return parsed YAML."""
+        """Generate Lavalink configs using Installer and return parsed YAML for the
+        requested deployment type (application.docker.yml for Docker, application.yml otherwise)."""
         config = {
             'lavalink_port': '2333',
             'lavalink_password': 'youshallnotpass',
@@ -104,8 +108,9 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
         if config_overrides:
             config.update(config_overrides)
         with tempfile.TemporaryDirectory() as tmpdir:
-            Installer._write_lavalink_config(Path(tmpdir), config, use_docker=use_docker)
-            config_path = Path(tmpdir) / 'lavalink' / 'application.yml'
+            Installer._write_lavalink_config(Path(tmpdir), config)
+            filename = 'application.docker.yml' if use_docker else 'application.yml'
+            config_path = Path(tmpdir) / 'lavalink' / filename
             with open(config_path, 'r') as f:
                 return yaml.safe_load(f)
 
@@ -221,6 +226,90 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             compose.get("services", {}),
             "yt-cipher should not be present when lavalink is disabled.",
         )
+
+    def test_both_config_files_always_written(self):
+        """_write_lavalink_config must always write both application.yml and application.docker.yml.
+
+        application.yml  — non-Docker config (public cipher)
+        application.docker.yml — Docker config (internal cipher)
+        Both are written on every run so users can switch deployment modes without re-running the installer.
+        """
+        config = {
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+            'spotify_client_id': '',
+            'spotify_client_secret': '',
+            'youtube_refresh_token': '',
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Installer._write_lavalink_config(Path(tmpdir), config)
+            self.assertTrue(
+                (Path(tmpdir) / 'lavalink' / 'application.yml').exists(),
+                "application.yml must be written by _write_lavalink_config.",
+            )
+            self.assertTrue(
+                (Path(tmpdir) / 'lavalink' / 'application.docker.yml').exists(),
+                "application.docker.yml must be written by _write_lavalink_config.",
+            )
+
+    def test_generated_compose_lavalink_uses_spring_config_location(self):
+        """Docker compose lavalink service must set SPRING_CONFIG_LOCATION to application.docker.yml.
+
+        Without SPRING_CONFIG_LOCATION, Lavalink loads application.yml (the non-Docker config)
+        which points remoteCipher at the public https://cipher.kikkia.dev/ instance instead of
+        the internal yt-cipher Docker service.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        lavalink = compose.get("services", {}).get("lavalink", {})
+        env = lavalink.get("environment", [])
+        self.assertIn(
+            "SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml",
+            env,
+            "Docker lavalink service must set SPRING_CONFIG_LOCATION to "
+            "file:/opt/lavalink/application.docker.yml so it uses the Docker-specific config.",
+        )
+
+
+class TestLavalinkDockerConfig(unittest.TestCase):
+    """Validates the committed lavalink/application.docker.yml is correctly configured for Docker."""
+
+    def setUp(self):
+        with open(LAVALINK_DOCKER_CONFIG_PATH, "r") as f:
+            self.config = yaml.safe_load(f)
+
+    def _get_youtube_config(self):
+        return self.config["plugins"]["youtube"]
+
+    def test_docker_config_file_exists(self):
+        """lavalink/application.docker.yml must exist as the committed Docker reference config."""
+        self.assertTrue(
+            os.path.exists(LAVALINK_DOCKER_CONFIG_PATH),
+            "lavalink/application.docker.yml must exist for Docker deployments.",
+        )
+
+    def test_docker_config_uses_internal_cipher_hostname(self):
+        """application.docker.yml must point remoteCipher at the internal yt-cipher service.
+
+        Inside Docker Compose the 'yt-cipher' hostname resolves to the yt-cipher container.
+        """
+        youtube = self._get_youtube_config()
+        remote_cipher = youtube.get("remoteCipher", {})
+        self.assertEqual(
+            remote_cipher.get("url", "").strip(),
+            "http://yt-cipher:8001",
+            "application.docker.yml remoteCipher.url must be 'http://yt-cipher:8001'.",
+        )
+
+    def test_docker_config_youtube_source_enabled(self):
+        """The youtube-source plugin must be enabled in application.docker.yml."""
+        youtube = self._get_youtube_config()
+        self.assertTrue(youtube.get("enabled", False))
+
+    def test_docker_config_tv_client_present(self):
+        """TV client must be present in application.docker.yml for OAuth-compatible playback."""
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertIn("TV", clients)
 
 
 if __name__ == "__main__":

@@ -436,6 +436,7 @@ class Installer:
       - _JAVA_OPTIONS=-Xmx1G
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
+      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
     volumes:
       - ./lavalink:/opt/lavalink
     expose:
@@ -531,7 +532,6 @@ class Installer:
     def _write_lavalink_config(
         install_dir: Path,
         config: dict[str, Any],
-        use_docker: bool = True,
     ) -> None:
         port     = config.get('lavalink_port', '2333')
         password = config.get('lavalink_password', 'youshallnotpass')
@@ -559,21 +559,21 @@ class Installer:
             )
         # remoteCipher delegates YouTube signature extraction to the yt-cipher
         # Docker service (internal hostname) or the public instance (non-Docker).
-        if use_docker:
-            remote_cipher_section = (
-                "    remoteCipher:\n"
-                "      url: \"http://yt-cipher:8001\""
-                " # Remote cipher server for YouTube sig function extraction."
-                " See https://github.com/kikkia/yt-cipher\n"
-            )
-        else:
-            remote_cipher_section = (
-                "    remoteCipher:\n"
-                "      url: \"https://cipher.kikkia.dev/\""
-                " # Public yt-cipher instance for YouTube sig function extraction."
-                " See https://github.com/kikkia/yt-cipher\n"
-            )
-        content = f"""\
+        docker_remote_cipher_section = (
+            "    remoteCipher:\n"
+            "      url: \"http://yt-cipher:8001\""
+            " # Remote cipher server for YouTube sig function extraction."
+            " See https://github.com/kikkia/yt-cipher\n"
+        )
+        nondocker_remote_cipher_section = (
+            "    remoteCipher:\n"
+            "      url: \"https://cipher.kikkia.dev/\""
+            " # Public yt-cipher instance for YouTube sig function extraction."
+            " See https://github.com/kikkia/yt-cipher\n"
+        )
+
+        def _build_content(remote_cipher_section: str) -> str:
+            return f"""\
 server: # REST and WS server
   port: {port}
   address: 0.0.0.0
@@ -778,9 +778,17 @@ logging:
         FileManager.mkdir(lavalink_dir / 'logs')
         FileManager.mkdir(lavalink_dir / 'plugins')
 
-        dest = lavalink_dir / 'application.yml'
-        dest.write_text(content, encoding='utf-8')
+        # Non-Docker config: uses public yt-cipher instance
+        (lavalink_dir / 'application.yml').write_text(
+            _build_content(nondocker_remote_cipher_section), encoding='utf-8'
+        )
         print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
+
+        # Docker config: uses internal yt-cipher service hostname
+        (lavalink_dir / 'application.docker.yml').write_text(
+            _build_content(docker_remote_cipher_section), encoding='utf-8'
+        )
+        print(f"{Colors.GREEN}Wrote lavalink/application.docker.yml{Colors.END}")
 
     # ------------------------------------------------------------------ run
 
@@ -856,7 +864,7 @@ logging:
             if use_docker:
                 self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
             if enable_lavalink:
-                self._write_lavalink_config(install_dir, config, use_docker=use_docker)
+                self._write_lavalink_config(install_dir, config)
                 jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
                 if not jar_dest.exists():
                     self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
