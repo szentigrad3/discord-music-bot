@@ -88,6 +88,27 @@ class TestLavalinkConfig(unittest.TestCase):
             "See https://github.com/kikkia/yt-cipher",
         )
 
+    def test_skip_initialization_is_true(self):
+        """oauth.skipInitialization must be true to register the POST /v4/youtube/oauth endpoint.
+
+        The youtube-source plugin only registers the POST /v4/youtube/oauth REST endpoint when
+        skipInitialization is true. With skipInitialization: false, Lavalink starts the OAuth
+        flow internally and does not register that REST endpoint, causing 'No mapping for POST
+        /v4/youtube/oauth' warnings. See https://github.com/lavalink-devs/youtube-source#oauth-token
+        """
+        youtube = self._get_youtube_config()
+        oauth_config = youtube.get("oauth", {})
+        if not oauth_config.get("enabled", False):
+            self.skipTest("OAuth is not enabled; skipping skipInitialization check.")
+
+        self.assertTrue(
+            oauth_config.get("skipInitialization", False),
+            "plugins.youtube.oauth.skipInitialization must be true so the youtube-source plugin "
+            "registers the POST /v4/youtube/oauth REST endpoint. Without this, the bot cannot "
+            "push its YouTube refresh token to Lavalink and Lavalink logs 'No mapping for POST "
+            "/v4/youtube/oauth'.",
+        )
+
 
 class TestInstallerGeneratedConfig(unittest.TestCase):
     """Validates that install.py generates Lavalink configs with all required settings."""
@@ -170,6 +191,22 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "yt-cipher",
             compose.get("services", {}),
             "yt-cipher should not be present when lavalink is disabled.",
+        )
+
+    def test_generated_config_skip_initialization_true_with_token(self):
+        """install.py must set skipInitialization: true when a YouTube refresh token is provided.
+
+        The youtube-source plugin only registers POST /v4/youtube/oauth when skipInitialization
+        is true. The bot pushes the refresh token via this endpoint on startup; without it
+        Lavalink logs 'No mapping for POST /v4/youtube/oauth'.
+        """
+        config = self._generate_config({'youtube_refresh_token': 'fake_refresh_token'})
+        oauth = config["plugins"]["youtube"].get("oauth", {})
+        self.assertTrue(
+            oauth.get("skipInitialization", False),
+            "install.py must set plugins.youtube.oauth.skipInitialization: true when a "
+            "youtube_refresh_token is provided, so the POST /v4/youtube/oauth endpoint is "
+            "registered by the youtube-source plugin.",
         )
 
 

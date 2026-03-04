@@ -30,7 +30,8 @@ plugins:
 
       # Set this if you don't want the OAuth flow to be triggered, if you intend to supply a refresh token
       # later on via REST routes. Initialization is skipped automatically if a valid refresh token is supplied.
-      skipInitialization: false
+      # Must be true to enable the POST /v4/youtube/oauth REST endpoint used by the bot to push tokens at runtime.
+      skipInitialization: true
     remoteCipher:
       url: "http://yt-cipher:8001" # Remote cipher server for YouTube sig function extraction. See https://github.com/kikkia/yt-cipher
   lavasrc:
