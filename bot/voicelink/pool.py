@@ -375,7 +375,7 @@ class Node:
         if not self._available:
             raise NodeNotAvailable(f"The node '{self._identifier}' is unavailable.")
 
-        uri: str = f"{self._rest_uri}/youtube"
+        uri: str = f"{self._rest_uri}/{NODE_VERSION}/youtube/oauth"
         async with self._session.request(
             method="POST",
             url=uri,

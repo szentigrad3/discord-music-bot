@@ -477,5 +477,63 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
         self.assertEqual(player._voice_state, {})
 
 
+class TestYouTubeOAuth(unittest.TestCase):
+    """Tests for YouTube OAuth refresh token integration."""
+
+    def _run(self, coro):
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def test_update_refresh_yt_access_token_uses_correct_url(self):
+        """update_refresh_yt_access_token must POST to /v4/youtube/oauth."""
+        from bot.voicelink.pool import Node, NODE_VERSION
+        from bot.voicelink.ratelimit import YTToken
+        import aiohttp
+
+        node = MagicMock(spec=Node)
+        node._available = True
+        node._rest_uri = "http://localhost:2333"
+        node._password = "youshallnotpass"
+
+        captured = {}
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        def fake_request(method, url, headers, json):
+            captured['method'] = method
+            captured['url'] = url
+            captured['json'] = json
+            return mock_resp
+
+        node._session = MagicMock()
+        node._session.request = fake_request
+
+        self._run(Node.update_refresh_yt_access_token(node, YTToken("my-refresh-token")))
+
+        expected_url = f"http://localhost:2333/{NODE_VERSION}/youtube/oauth"
+        self.assertEqual(captured['url'], expected_url,
+                         "OAuth endpoint must include the API version prefix and /oauth suffix")
+        self.assertEqual(captured['method'], "POST")
+        self.assertEqual(captured['json'], {"refreshToken": "my-refresh-token"})
+
+    def test_settings_reads_youtube_refresh_token(self):
+        """Settings class must expose youtube_refresh_token from settings data."""
+        from bot.settings import Settings
+        data = {
+            "token": "tok",
+            "youtube_refresh_token": "yt-oauth-refresh-abc",
+        }
+        s = Settings(data)
+        self.assertEqual(s.youtube_refresh_token, "yt-oauth-refresh-abc")
+
+    def test_settings_youtube_refresh_token_defaults_to_empty(self):
+        """youtube_refresh_token must default to empty string when not in settings."""
+        from bot.settings import Settings
+        s = Settings({"token": "tok"})
+        self.assertEqual(s.youtube_refresh_token, "")
+
+
 if __name__ == "__main__":
     unittest.main()
