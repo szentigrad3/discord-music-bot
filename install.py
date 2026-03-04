@@ -437,9 +437,9 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
     volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml
-      - ./lavalink/plugins:/opt/Lavalink/plugins
-      - ./lavalink/logs:/opt/Lavalink/logs
+      - ./lavalink/application.yml:/opt/lavalink/application.yml
+      - ./lavalink/plugins:/opt/lavalink/plugins
+      - ./lavalink/logs:/opt/lavalink/logs
     expose:
       - "{lavalink_port}"
     depends_on:
@@ -580,7 +580,7 @@ server: # REST and WS server
   port: {port}
   address: 0.0.0.0
   http2:
-    enabled: false # Disabled: wavelink uses HTTP/1.1 WebSocket; h2c causes empty-error connection failures
+    enabled: false # Disabled: voicelink uses HTTP/1.1 WebSocket; h2c causes empty-error connection failures
 plugins:
   youtube:
     enabled: true # Whether this source can be used.

@@ -1,9 +1,9 @@
 FROM eclipse-temurin:24-jre-noble
 
 RUN groupadd -g 322 lavalink && \
-    useradd -u 322 -g lavalink -m -d /opt/Lavalink lavalink
+    useradd -u 322 -g lavalink -m -d /opt/lavalink lavalink
 
-WORKDIR /opt/Lavalink
+WORKDIR /opt/lavalink
 
 ADD --chown=lavalink:lavalink https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar .
 
