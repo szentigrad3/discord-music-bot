@@ -22,9 +22,21 @@ plugins:
     # If an option, or client, is unspecified, then the default option value/client values will be used instead.
     # If a client is configured, but is not registered above, the options for that client will be ignored.
     # WARNING!: THE BELOW CONFIG IS FOR ILLUSTRATION PURPOSES. DO NOT COPY OR USE THIS WITHOUT
-    # WARNING!: UNDERSTANDING WHAT IT DOES. MISCONFIGURATION WILL HINDER YOUTUBE-SOURCE'S ABILITY TO WORK PROPERLY.
-
+    # WARNING!: UNDERSTANDING WHAT IT DOES. MISCONFIGURATION WILL HINDER YOUTUBE-SOURCE'S ABILITY TO WORK PROPERLY
     # Write the names of clients as they are specified under the heading "Available Clients".
+  oauth:
+  # setting "enabled: true" is the bare minimum to get OAuth working.
+  enabled: true
+
+  # you may optionally set your refresh token if you have one, which skips the OAuth flow entirely.
+  # once you have completed the oauth flow at least once, you should see your refresh token within your
+  # lavalink logs, which can be used here.
+  #refreshToken: "your refresh token, only supply this if you have one!"
+
+  # Set this if you don't want the OAuth flow to be triggered, if you intend to supply a refresh token
+  # later on via REST routes. Initialization is skipped automatically if a valid refresh token is supplied.
+  skipInitialization: true
+    
     clientOptions:
       WEB:
         # Example: Disabling a client's playback capabilities.
