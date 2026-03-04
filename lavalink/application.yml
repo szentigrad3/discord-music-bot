@@ -11,11 +11,26 @@ plugins:
     allowDirectPlaylistIds: true # Whether just playlist IDs can match. If false, only complete URLs will be loaded.
     # The clients to use for track loading. See below for a list of valid clients.
     # Clients are queried in the order they are given (so the first client is queried first and so on...)
+    # Valid clients (youtube-plugin 1.18.0): MUSIC, WEB, MWEB, WEBEMBEDDED, ANDROID, ANDROID_MUSIC,
+    #   ANDROID_VR, IOS, TV, TVHTML5_SIMPLY
+    # Note: ANDROID_TESTSUITE and TVHTML5EMBEDDED were removed; TVHTML5_SIMPLY was added in 1.18.0.
     clients:
       - MUSIC
-      - ANDROID_TESTSUITE
+      - ANDROID_VR
       - WEB
-      - TVHTML5_SIMPLY_EMBEDDED_PLAYER
+      - WEBEMBEDDED
+      - TVHTML5_SIMPLY
+    # To handle videos that require login (e.g. age-restricted content), configure one of the following:
+    # Option 1 – OAuth (use a burner account; do NOT use your primary account):
+    #oauth:
+    #  enabled: true
+    #  # refreshToken: "paste your refresh token here after completing the OAuth flow once"
+    #  # skipInitialization: true  # set true only if you intend to supply a refreshToken later
+    # Option 2 – poToken (applies to WEB and WEBEMBEDDED clients only):
+    # Generate a token via https://github.com/iv-org/youtube-trusted-session-generator
+    #pot:
+    #  token: "paste your poToken here"
+    #  visitorData: "paste your visitorData here"
   lavasrc:
     providers: # Custom providers for track loading. This is the default
       # - "dzisrc:%ISRC%" # Deezer ISRC provider
