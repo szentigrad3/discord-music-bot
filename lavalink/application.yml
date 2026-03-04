@@ -14,11 +14,13 @@ plugins:
     # Valid clients (youtube-plugin 1.18.0): MUSIC, WEB, MWEB, WEBEMBEDDED, ANDROID, ANDROID_MUSIC,
     #   ANDROID_VR, IOS, TV, TVHTML5_SIMPLY
     # Note: ANDROID_TESTSUITE and TVHTML5EMBEDDED were removed; TVHTML5_SIMPLY was added in 1.18.0.
+    # Note: ANDROID_VR and WEBEMBEDDED are excluded — they consistently fail with "This video requires
+    #   login" / "Video player configuration error". TV (Apple TV client) is added as it bypasses
+    #   bot-detection more reliably. For age-restricted content, configure OAuth below.
     clients:
       - MUSIC
-      - ANDROID_VR
       - WEB
-      - WEBEMBEDDED
+      - TV
       - TVHTML5_SIMPLY
     # To handle videos that require login (e.g. age-restricted content), configure one of the following:
     # Option 1 – OAuth (use a burner account; do NOT use your primary account):
