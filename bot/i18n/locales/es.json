@@ -44,6 +44,15 @@
   "filter": {
     "set": "🎛️ Filtro ajustado a **{{name}}**."
   },
+  "seek": {
+    "set": "⏩ Buscado hasta **{{position}}**."
+  },
+  "move": {
+    "moved": "↕️ Movido **{{title}}** de la posición {{from}} a {{to}}."
+  },
+  "clear": {
+    "cleared": "🗑️ Se eliminaron **{{count}}** pista(s) de la cola."
+  },
   "settings": {
     "updated": "✅ Configuración actualizada.",
     "shown": "⚙️ Configuración actual:"

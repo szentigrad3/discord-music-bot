@@ -11,6 +11,7 @@ from bot.i18n import t
 from bot.music.player import FILTERS, MusicPlayer, RepeatMode
 from bot.music.queue import get_or_create_player, resolve_tracks
 from bot.views import SearchView, build_now_playing_embed
+from bot.views.controller import get_filter_display_name
 
 PAGE_SIZE = 10
 
@@ -27,6 +28,33 @@ class Music(commands.Cog):
             return s.get('language', 'en')
         except Exception:
             return 'en'
+
+    async def _check_dj_role(self, ctx) -> bool:
+        """Return True if the user passes the DJ role check.
+
+        If no DJ role is configured for the guild, everyone is allowed.
+        Administrators always pass.
+        """
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        member = ctx.user if is_inter else ctx.author
+
+        if not isinstance(member, discord.Member):
+            return True
+
+        if member.guild_permissions.administrator:
+            return True
+
+        try:
+            settings = await get_guild_settings(str(guild.id))
+            dj_role_id = settings.get('djRoleId')
+        except Exception:
+            return True
+
+        if not dj_role_id:
+            return True
+
+        return any(str(role.id) == dj_role_id for role in member.roles)
 
     # ================================================================== /play ==
 
@@ -189,6 +217,13 @@ class Music(commands.Cog):
         is_inter = isinstance(ctx, discord.Interaction)
         guild = ctx.guild
         lang = await self._get_lang(guild)
+
+        if not await self._check_dj_role(ctx):
+            msg = t('errors.missingPermissions', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
         player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
 
         if not player:
@@ -350,6 +385,12 @@ class Music(commands.Cog):
         guild = ctx.guild
         lang = await self._get_lang(guild)
 
+        if not await self._check_dj_role(ctx):
+            msg = t('errors.missingPermissions', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
         if not level or level < 1 or level > 100:
             msg = 'Please provide a volume between 1 and 100.'
             if is_inter:
@@ -383,6 +424,13 @@ class Music(commands.Cog):
         is_inter = isinstance(ctx, discord.Interaction)
         guild = ctx.guild
         lang = await self._get_lang(guild)
+
+        if not await self._check_dj_role(ctx):
+            msg = t('errors.missingPermissions', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
         player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
 
         if not player or len(player.tracks) < 2:
@@ -422,6 +470,12 @@ class Music(commands.Cog):
 
         if mode not in mode_map:
             msg = 'Valid modes: `off`, `one`, `all`'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if not await self._check_dj_role(ctx):
+            msg = t('errors.missingPermissions', lang)
             if is_inter:
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
@@ -480,6 +534,10 @@ class Music(commands.Cog):
         app_commands.Choice(name='None', value='none'),
         app_commands.Choice(name='Nightcore', value='nightcore'),
         app_commands.Choice(name='Bass Boost', value='bassboost'),
+        app_commands.Choice(name='Vaporwave', value='vaporwave'),
+        app_commands.Choice(name='8D Audio', value='8d'),
+        app_commands.Choice(name='Karaoke', value='karaoke'),
+        app_commands.Choice(name='Slowed', value='slowed'),
     ])
     async def filter_slash(self, interaction: discord.Interaction, name: str) -> None:
         await self._filter(interaction, name)
@@ -492,6 +550,12 @@ class Music(commands.Cog):
         is_inter = isinstance(ctx, discord.Interaction)
         guild = ctx.guild
         lang = await self._get_lang(guild)
+
+        if not await self._check_dj_role(ctx):
+            msg = t('errors.missingPermissions', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
 
         if not name or name not in FILTERS:
             msg = f'Valid filters: {", ".join(FILTERS.keys())}'
@@ -507,7 +571,8 @@ class Music(commands.Cog):
             return await ctx.reply(msg)
 
         await player.set_filter(name)
-        msg = t('filter.set', lang, {'name': name})
+        filter_display = get_filter_display_name(name)
+        msg = t('filter.set', lang, {'name': filter_display})
         if is_inter:
             return await ctx.response.send_message(msg)
         return await ctx.reply(msg)
@@ -683,6 +748,129 @@ class Music(commands.Cog):
 
         removed = player.tracks.pop(position - 1)
         msg = f'🗑️ Removed **{removed.title}** from position {position}.'
+        if is_inter:
+            return await ctx.response.send_message(msg)
+        return await ctx.reply(msg)
+
+    # ================================================================= /seek ==
+
+    @app_commands.command(name='seek', description='Seek to a position in the current track')
+    @app_commands.describe(seconds='Position in seconds')
+    async def seek_slash(self, interaction: discord.Interaction, seconds: app_commands.Range[int, 0]) -> None:
+        await self._seek(interaction, seconds)
+
+    @commands.command(name='seek')
+    async def seek_prefix(self, ctx: commands.Context, seconds: int = 0) -> None:
+        await self._seek(ctx, seconds)
+
+    async def _seek(self, ctx, seconds: int) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        lang = await self._get_lang(guild)
+        player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
+
+        if not player or not player.current:
+            msg = t('errors.nothingPlaying', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        vl_track = player.current._vl_track
+        if vl_track and not vl_track.is_seekable:
+            msg = '❌ This track is not seekable (live stream).'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if seconds < 0:
+            seconds = 0
+
+        await player.seek(seconds)
+        from bot.music.track import Track as MusicTrack
+        pos_fmt = MusicTrack.format_duration(seconds * 1000)
+        msg = t('seek.set', lang, {'position': pos_fmt})
+        if is_inter:
+            return await ctx.response.send_message(msg)
+        return await ctx.reply(msg)
+
+    # ================================================================== /move ==
+
+    @app_commands.command(name='move', description='Move a track to a different queue position')
+    @app_commands.describe(from_pos='Current position (1-based)', to_pos='New position (1-based)')
+    async def move_slash(
+        self,
+        interaction: discord.Interaction,
+        from_pos: app_commands.Range[int, 1],
+        to_pos: app_commands.Range[int, 1],
+    ) -> None:
+        await self._move(interaction, from_pos, to_pos)
+
+    @commands.command(name='move', aliases=['mv'])
+    async def move_prefix(self, ctx: commands.Context, from_pos: int = 0, to_pos: int = 0) -> None:
+        await self._move(ctx, from_pos, to_pos)
+
+    async def _move(self, ctx, from_pos: int, to_pos: int) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        lang = await self._get_lang(guild)
+        player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
+
+        if not player or not player.tracks:
+            msg = t('errors.queueEmpty', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        queue_len = len(player.tracks)
+        if from_pos < 1 or from_pos > queue_len or to_pos < 1 or to_pos > queue_len:
+            msg = f'❌ Positions must be between 1 and {queue_len}.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if from_pos == to_pos:
+            msg = '❌ From and to positions are the same.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        track_title = player.tracks[from_pos - 1].title
+        player.move_track(from_pos, to_pos)
+        msg = t('move.moved', lang, {'title': track_title, 'from': from_pos, 'to': to_pos})
+        if is_inter:
+            return await ctx.response.send_message(msg)
+        return await ctx.reply(msg)
+
+    # ================================================================= /clear ==
+
+    @app_commands.command(name='clear', description='Clear the queue without stopping the current track')
+    async def clear_slash(self, interaction: discord.Interaction) -> None:
+        await self._clear(interaction)
+
+    @commands.command(name='clear', aliases=['cl'])
+    async def clear_prefix(self, ctx: commands.Context) -> None:
+        await self._clear(ctx)
+
+    async def _clear(self, ctx) -> None:
+        is_inter = isinstance(ctx, discord.Interaction)
+        guild = ctx.guild
+        lang = await self._get_lang(guild)
+        player: MusicPlayer | None = self.bot.queues.get(str(guild.id))
+
+        if not player or not player.tracks:
+            msg = t('errors.queueEmpty', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        if not await self._check_dj_role(ctx):
+            msg = t('errors.missingPermissions', lang)
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
+
+        count = player.clear_queue()
+        msg = t('clear.cleared', lang, {'count': count})
         if is_inter:
             return await ctx.response.send_message(msg)
         return await ctx.reply(msg)

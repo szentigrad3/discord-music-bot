@@ -7,6 +7,7 @@ import discord
 
 from bot.logger import get_logger
 from bot.voicelink import Equalizer, Filters, Player as VoicelinkPlayer, Timescale
+from bot.voicelink.filters import Rotation
 from .track import Track
 
 if TYPE_CHECKING:
@@ -18,6 +19,10 @@ FILTERS: dict[str, str | None] = {
     'none': None,
     'nightcore': 'nightcore',
     'bassboost': 'bassboost',
+    'vaporwave': 'vaporwave',
+    '8d': '8d',
+    'karaoke': 'karaoke',
+    'slowed': 'slowed',
 }
 
 
@@ -33,6 +38,15 @@ def _build_voicelink_filters(filter_name: str) -> list:
         return [Timescale.nightcore()]
     elif filter_name == 'bassboost':
         return [Equalizer.boost()]
+    elif filter_name == 'vaporwave':
+        return [Timescale.vaporwave()]
+    elif filter_name == '8d':
+        return [Rotation.nightD()]
+    elif filter_name == 'karaoke':
+        from bot.voicelink.filters import Karaoke
+        return [Karaoke()]
+    elif filter_name == 'slowed':
+        return [Timescale(tag='slowed', speed=0.75, pitch=0.9)]
     return []
 
 
@@ -101,10 +115,10 @@ class MusicPlayer:
                 pass
 
     async def _apply_filters(self, filter_name: str) -> None:
-        """Reset filters then apply the named filter set."""
+        """Reset filters then apply the named filter set (fast-apply for instant effect)."""
         await self._vl_player.reset_filters()
         for f in _build_voicelink_filters(filter_name):
-            await self._vl_player.add_filter(f)
+            await self._vl_player.add_filter(f, fast_apply=True)
 
     async def _send_or_update_controller(self) -> None:
         """Send a new controller message or update the existing one."""
@@ -214,6 +228,21 @@ class MusicPlayer:
 
     def set_repeat(self, mode: int) -> None:
         self.repeat_mode = mode
+
+    async def seek(self, seconds: int) -> None:
+        """Seek to a position in the current track (seconds)."""
+        await self._vl_player.seek(seconds * 1000)
+
+    def move_track(self, from_pos: int, to_pos: int) -> None:
+        """Move a track from one queue position to another (1-based indices)."""
+        track = self.tracks.pop(from_pos - 1)
+        self.tracks.insert(to_pos - 1, track)
+
+    def clear_queue(self) -> int:
+        """Clear all queued tracks without stopping the current track. Returns number cleared."""
+        count = len(self.tracks)
+        self.tracks = []
+        return count
 
     # ------------------------------------------------------------------ cleanup
 

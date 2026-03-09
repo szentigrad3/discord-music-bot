@@ -21,6 +21,42 @@ _REPEAT_LABELS = {
     RepeatMode.ALL: 'All',
 }
 
+_SOURCE_EMOJIS = {
+    'youtube': '▶️',
+    'soundcloud': '🔶',
+    'spotify': '🟢',
+    'twitch': '💜',
+    'bandcamp': '🔵',
+}
+
+_FILTER_DISPLAY_NAMES = {
+    'none': 'None',
+    'nightcore': 'Nightcore',
+    'bassboost': 'Bass Boost',
+    'vaporwave': 'Vaporwave',
+    '8d': '8D Audio',
+    'karaoke': 'Karaoke',
+    'slowed': 'Slowed',
+}
+
+
+def get_filter_display_name(filter_name: str) -> str:
+    """Return a human-readable display name for a filter key."""
+    return _FILTER_DISPLAY_NAMES.get(filter_name, filter_name.capitalize())
+
+
+def _build_progress_bar(position_ms: float, length_ms: float, bar_length: int = 12) -> str:
+    """Build a unicode progress bar string."""
+    if not length_ms or length_ms <= 0:
+        return '▬' * bar_length
+
+    position_ms = max(0.0, position_ms)
+    ratio = min(position_ms / length_ms, 1.0)
+    filled = round(ratio * bar_length)
+    filled = max(0, min(filled, bar_length - 1))
+    bar = '▬' * filled + '🔘' + '▬' * (bar_length - filled - 1)
+    return bar
+
 
 def build_now_playing_embed(player: MusicPlayer) -> discord.Embed:
     """Build a rich Now Playing embed matching Vocard's style."""
@@ -33,10 +69,39 @@ def build_now_playing_embed(player: MusicPlayer) -> discord.Embed:
         description=f'**[{track.title}]({track.url})**',
         color=0x5865F2,
     )
-    embed.add_field(name='Duration', value=track.duration, inline=True)
+
+    if track.author:
+        embed.add_field(name='Artist', value=track.author, inline=True)
+
+    # Progress bar
+    vl_player = player._vl_player
+    position_ms = vl_player.position if vl_player else 0
+    length_ms = track._vl_track.length if track._vl_track else 0
+
+    if length_ms and length_ms > 0:
+        from bot.music.track import Track as MusicTrack
+        pos_fmt = MusicTrack.format_duration(position_ms)
+        progress_bar = _build_progress_bar(position_ms, length_ms)
+        embed.add_field(
+            name='Progress',
+            value=f'{pos_fmt} {progress_bar} {track.duration}',
+            inline=False,
+        )
+    else:
+        embed.add_field(name='Duration', value=track.duration, inline=True)
+
     embed.add_field(name='Requested by', value=track.requested_by or 'Unknown', inline=True)
     embed.add_field(name='Volume', value=f'{player.volume}%', inline=True)
-    embed.add_field(name='Filter', value=player.filter.capitalize(), inline=True)
+
+    filter_display = get_filter_display_name(player.filter)
+    if track.source:
+        source_key = track.source.lower()
+        source_emoji = _SOURCE_EMOJIS.get(source_key, '')
+        source_str = f'{source_emoji} {track.source.capitalize()}' if source_emoji else track.source.capitalize()
+    else:
+        source_str = '—'
+    embed.add_field(name='Filter', value=filter_display, inline=True)
+    embed.add_field(name='Source', value=source_str, inline=True)
     embed.add_field(
         name='Loop',
         value=f'{_REPEAT_EMOJIS[player.repeat_mode]} {_REPEAT_LABELS[player.repeat_mode]}',
