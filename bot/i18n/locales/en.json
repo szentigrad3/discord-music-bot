@@ -44,6 +44,15 @@
   "filter": {
     "set": "🎛️ Filter set to **{{name}}**."
   },
+  "seek": {
+    "set": "⏩ Seeked to **{{position}}**."
+  },
+  "move": {
+    "moved": "↕️ Moved **{{title}}** from position {{from}} to {{to}}."
+  },
+  "clear": {
+    "cleared": "🗑️ Cleared **{{count}}** track(s) from the queue."
+  },
   "settings": {
     "updated": "✅ Settings updated.",
     "shown": "⚙️ Current settings:"

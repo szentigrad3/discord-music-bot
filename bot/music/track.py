@@ -16,6 +16,8 @@ class Track:
         duration: str,
         thumbnail: str | None = None,
         requested_by: str | None = None,
+        author: str | None = None,
+        source: str | None = None,
         _vl_track: Optional[VoicelinkTrack] = None,
     ):
         self.title = title
@@ -23,6 +25,8 @@ class Track:
         self.duration = duration or 'Unknown'
         self.thumbnail = thumbnail
         self.requested_by = requested_by
+        self.author = author
+        self.source = source
         # Reference to the original voicelink Track (holds the encoded track_id for Lavalink)
         self._vl_track: Optional[VoicelinkTrack] = _vl_track
 
@@ -50,5 +54,7 @@ class Track:
             duration=cls.format_duration(track.length),
             thumbnail=track.thumbnail,
             requested_by=requested_by,
+            author=getattr(track, 'author', None),
+            source=getattr(track, 'source', None),
             _vl_track=track,
         )
