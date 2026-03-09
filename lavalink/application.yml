@@ -13,9 +13,8 @@ plugins:
     # Clients are queried in the order they are given (so the first client is queried first and so on...)
     clients:
       - MUSIC
-      - ANDROID_VR
-      - ANDROID_MUSIC
       - WEB
+      - IOS
       - MWEB
       - WEBEMBEDDED
       - TVHTML5_SIMPLY
