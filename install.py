@@ -596,7 +596,6 @@ plugins:
       - ANDROID_MUSIC
       - WEB
       - WEBEMBEDDED
-      - TVHTML5_SIMPLY
       - TV
     # The below section of the config allows setting specific options for each client, such as the requests they will handle.
     # If an option, or client, is unspecified, then the default option value/client values will be used instead.

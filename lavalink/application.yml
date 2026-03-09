@@ -17,7 +17,6 @@ plugins:
       - ANDROID_MUSIC
       - WEB
       - WEBEMBEDDED
-      - TVHTML5_SIMPLY
       - TV
     oauth:
       # setting "enabled: true" is the bare minimum to get OAuth working.

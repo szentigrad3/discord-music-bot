@@ -75,13 +75,30 @@ class TestLavalinkConfig(unittest.TestCase):
             "See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
         )
 
+    def test_tvhtml5_simply_not_in_clients_list(self):
+        """TVHTML5_SIMPLY must not be in the clients list.
+
+        TVHTML5_SIMPLY uses the TVHTML5 HTTP client which requires remote cipher resolution.
+        When the cipher service returns {"error":"no solutions"} (HTTP 500), playback fails
+        with 'Remote cipher service request to resolve URL failed'. The other clients
+        (MUSIC, ANDROID_VR, ANDROID_MUSIC, TV) handle playback reliably without cipher.
+        """
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertNotIn(
+            "TVHTML5_SIMPLY",
+            clients,
+            "TVHTML5_SIMPLY must be removed from the clients list. It requires cipher "
+            "resolution which fails when the remote cipher service returns 'no solutions'.",
+        )
+
     def test_remote_cipher_configured(self):
         """A remoteCipher URL must be configured to handle YouTube sig function extraction.
 
-        The TV (TVHTML5) client fails with 'Must find sig function from script' when
-        YouTube changes their obfuscated player script. Configuring a remote cipher server
-        (https://github.com/kikkia/yt-cipher) delegates this work to an external service
-        that uses yt-dlp to reliably extract signature functions.
+        Clients such as WEBEMBEDDED that perform video loading and playback require cipher
+        resolution. Configuring a remote cipher server (https://github.com/kikkia/yt-cipher)
+        delegates this work to an external service that uses yt-dlp to reliably extract
+        signature functions, avoiding local 'Must find sig function from script' failures.
         """
         youtube = self._get_youtube_config()
         remote_cipher = youtube.get("remoteCipher", {})
@@ -130,10 +147,11 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
     def test_generated_config_has_remote_cipher(self):
         """install.py must generate application.yml with remoteCipher configured when using Docker.
 
-        Without remoteCipher, the TV (TVHTML5) client falls back to LocalSignatureCipherManager
-        which fails with 'Must find sig function from script' when YouTube changes their
-        obfuscated player script. The yt-cipher service is deployed in docker-compose but
-        must be wired up via remoteCipher in application.yml.
+        Clients such as WEBEMBEDDED that perform video loading require cipher resolution.
+        Without remoteCipher they fall back to LocalSignatureCipherManager which fails with
+        'Must find sig function from script' when YouTube changes their obfuscated player
+        script. The yt-cipher service is deployed in docker-compose and must be wired up
+        via remoteCipher in application.yml.
         """
         config = self._generate_config(use_docker=True)
         youtube = config["plugins"]["youtube"]
@@ -143,6 +161,24 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "install.py must write plugins.youtube.remoteCipher.url to application.yml "
             "for Docker deployments. See https://github.com/kikkia/yt-cipher",
         )
+
+    def test_generated_config_excludes_tvhtml5_simply(self):
+        """install.py must not include TVHTML5_SIMPLY in the generated clients list.
+
+        TVHTML5_SIMPLY requires remote cipher resolution. When the cipher service returns
+        {"error":"no solutions"} (HTTP 500), playback fails entirely. The other clients
+        (MUSIC, ANDROID_VR, ANDROID_MUSIC, TV) handle playback without needing cipher.
+        """
+        for use_docker in (True, False):
+            with self.subTest(use_docker=use_docker):
+                config = self._generate_config(use_docker=use_docker)
+                clients = config["plugins"]["youtube"].get("clients", [])
+                self.assertNotIn(
+                    "TVHTML5_SIMPLY",
+                    clients,
+                    "install.py must not include TVHTML5_SIMPLY in the clients list. "
+                    "It causes cipher failures when the remote cipher service returns 'no solutions'.",
+                )
 
     def test_generated_config_uses_public_cipher_when_not_docker(self):
         """install.py must configure remoteCipher to the public yt-cipher instance for non-Docker.
@@ -368,6 +404,21 @@ class TestLavalinkDockerConfig(unittest.TestCase):
         youtube = self._get_youtube_config()
         clients = youtube.get("clients", [])
         self.assertIn("TV", clients)
+
+    def test_docker_config_tvhtml5_simply_excluded(self):
+        """TVHTML5_SIMPLY must not be in the clients list in application.docker.yml.
+
+        TVHTML5_SIMPLY uses the TVHTML5 HTTP client which requires remote cipher resolution.
+        When the cipher service returns {"error":"no solutions"} (HTTP 500), playback fails.
+        """
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertNotIn(
+            "TVHTML5_SIMPLY",
+            clients,
+            "application.docker.yml must not include TVHTML5_SIMPLY. "
+            "It causes cipher failures when the remote cipher service returns 'no solutions'.",
+        )
 
 
 if __name__ == "__main__":
