@@ -94,7 +94,7 @@ class TestLavalinkConfig(unittest.TestCase):
             "See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
         )
 
-
+    def test_remote_cipher_url_configured(self):
         """A remoteCipher URL must be configured to handle YouTube sig function extraction.
 
         The TV (TVHTML5) client fails with 'Must find sig function from script' when
@@ -108,6 +108,23 @@ class TestLavalinkConfig(unittest.TestCase):
             remote_cipher.get("url", "").strip(),
             "plugins.youtube.remoteCipher.url must be set to a yt-cipher server URL. "
             "See https://github.com/kikkia/yt-cipher",
+        )
+
+    def test_ios_client_in_clients_list(self):
+        """IOS client must be present as a reliable playback fallback.
+
+        The ANDROID_VR and ANDROID_MUSIC clients are heavily restricted by YouTube and
+        frequently fail with 'This video requires login'. The IOS client does not require
+        authentication and reliably loads and plays most videos without cipher decryption.
+        See: https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients
+        """
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertIn(
+            "IOS",
+            clients,
+            "The 'IOS' client is required as a reliable fallback for video playback. "
+            "See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
         )
 
 
@@ -304,7 +321,7 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "fallback. See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
         )
 
-
+    def test_write_lavalink_config_writes_both_files(self):
         """_write_lavalink_config must always write both application.yml and application.docker.yml.
 
         application.yml  — non-Docker config (public cipher)
@@ -328,6 +345,22 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
                 (Path(tmpdir) / 'lavalink' / 'application.docker.yml').exists(),
                 "application.docker.yml must be written by _write_lavalink_config.",
             )
+
+    def test_generated_config_has_ios_client(self):
+        """install.py must include IOS in the YouTube clients list.
+
+        The ANDROID_VR and ANDROID_MUSIC clients are heavily restricted by YouTube and
+        frequently fail with 'This video requires login'. The IOS client does not require
+        authentication and reliably loads and plays most videos without cipher decryption.
+        """
+        config = self._generate_config(use_docker=True)
+        clients = config["plugins"]["youtube"].get("clients", [])
+        self.assertIn(
+            "IOS",
+            clients,
+            "install.py must include IOS in the youtube clients list as a reliable "
+            "fallback. See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
+        )
 
     def test_generated_compose_lavalink_uses_spring_config_location(self):
         """Docker compose lavalink service must set SPRING_CONFIG_LOCATION to application.docker.yml.
@@ -565,6 +598,21 @@ class TestLavalinkDockerConfig(unittest.TestCase):
             "MWEB",
             clients,
             "application.docker.yml must include MWEB as a cipher-free fallback client.",
+        )
+
+    def test_docker_config_ios_client_present(self):
+        """IOS client must be present in application.docker.yml as a reliable playback fallback.
+
+        The ANDROID_VR and ANDROID_MUSIC clients are heavily restricted by YouTube and
+        frequently fail with 'This video requires login'. The IOS client does not require
+        authentication and reliably loads and plays most videos without cipher decryption.
+        """
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertIn(
+            "IOS",
+            clients,
+            "application.docker.yml must include IOS as a reliable fallback client.",
         )
 
 
