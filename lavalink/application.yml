@@ -16,6 +16,7 @@ plugins:
       - ANDROID_VR
       - ANDROID_MUSIC
       - WEB
+      - MWEB
       - WEBEMBEDDED
       - TVHTML5_SIMPLY
       - TV

@@ -427,6 +427,20 @@ class Installer:
     restart: unless-stopped
     expose:
       - "8001"
+    labels:
+      # Allow Watchtower to auto-update yt-cipher when a new image is published.
+      # yt-cipher releases fixes for YouTube player script changes by rebuilding :master.
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    # Watches only services labelled com.centurylinklabs.watchtower.enable=true (i.e. yt-cipher).
+    # Checks for a new image every 24 hours and restarts the container if one is found.
+    # This ensures yt-cipher picks up cipher fixes without requiring a manual restart.
+    image: containrrr/watchtower:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --label-enable --interval 86400
 """ if enable_lavalink else ''
 
         lavalink_service = f"""
@@ -595,6 +609,7 @@ plugins:
       - ANDROID_VR
       - ANDROID_MUSIC
       - WEB
+      - MWEB
       - WEBEMBEDDED
       - TVHTML5_SIMPLY
       - TV
