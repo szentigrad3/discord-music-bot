@@ -5,6 +5,7 @@ Interactive Python installer with Docker support.
 Supports Windows, macOS, and Linux.
 """
 
+import json
 import os
 import sys
 import platform
@@ -554,6 +555,24 @@ class Installer:
     # ------------------------------------------------------------------ lavalink config writer
 
     @staticmethod
+    def _record_lavalink_version(install_dir: Path) -> None:
+        """Query GitHub for the latest Lavalink release tag and save it.
+
+        Writes ``lavalink/.lavalink-version`` so that ``update_lavalink.py``
+        can detect whether a newer release is available without re-downloading
+        the JAR unnecessarily.  Failures are non-fatal.
+        """
+        api_url = 'https://api.github.com/repos/lavalink-devs/Lavalink/releases/latest'
+        try:
+            with urllib.request.urlopen(api_url, timeout=10) as resp:
+                tag = json.loads(resp.read().decode()).get('tag_name', '').lstrip('v')
+            if tag:
+                version_file = install_dir / 'lavalink' / '.lavalink-version'
+                version_file.write_text(tag, encoding='utf-8')
+        except Exception:
+            pass  # Non-fatal: update_lavalink.py will re-download if the version is unknown.
+
+    @staticmethod
     def _write_lavalink_config(
         install_dir: Path,
         config: dict[str, Any],
@@ -892,6 +911,7 @@ logging:
                 jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
                 if not jar_dest.exists():
                     self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
+                    self._record_lavalink_version(install_dir)
                 else:
                     print(f"{Colors.GREEN}Lavalink.jar already present, skipping download.{Colors.END}")
 
