@@ -439,6 +439,31 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "modern Docker daemons that require at least API version 1.44.",
         )
 
+    def test_generated_compose_lavalink_has_watchtower_label(self):
+        """install.py must generate a lavalink service with the Watchtower enable label.
+
+        Without the label, Watchtower (running in --label-enable mode) will not monitor
+        lavalink, so new Lavalink releases will not be applied automatically.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        lavalink = compose.get("services", {}).get("lavalink", {})
+        labels = lavalink.get("labels", [])
+        self.assertIn(
+            "com.centurylinklabs.watchtower.enable=true",
+            labels,
+            "The lavalink service must have the Watchtower enable label so Watchtower "
+            "can auto-update it when new Lavalink images are released.",
+        )
+
+    def test_generated_compose_lavalink_no_watchtower_label_when_disabled(self):
+        """install.py must not generate a lavalink service when lavalink is disabled."""
+        compose = self._generate_docker_compose(enable_lavalink=False)
+        self.assertNotIn(
+            "lavalink",
+            compose.get("services", {}),
+            "docker-compose.yml must not include the lavalink service when lavalink is disabled.",
+        )
+
 
 DOCKER_COMPOSE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "docker-compose.yml"
@@ -544,6 +569,43 @@ class TestDockerCompose(unittest.TestCase):
             env,
             "Watchtower service must set DOCKER_API_VERSION=1.44 so it is compatible with "
             "modern Docker daemons that require at least API version 1.44.",
+        )
+
+    def test_compose_lavalink_has_watchtower_label(self):
+        """The committed docker-compose.yml lavalink service must have the Watchtower enable label.
+
+        Without the label, Watchtower (running in --label-enable mode) will not monitor
+        lavalink, and new Lavalink releases won't be applied without a manual
+        'docker compose pull && docker compose up -d'.
+        """
+        lavalink = self.compose.get("services", {}).get("lavalink", {})
+        labels = lavalink.get("labels", [])
+        self.assertIn(
+            "com.centurylinklabs.watchtower.enable=true",
+            labels,
+            "The lavalink service must have the Watchtower enable label so Watchtower "
+            "can auto-update it when new Lavalink images are released.",
+        )
+
+    def test_compose_lavalink_uses_image_not_build(self):
+        """The committed docker-compose.yml lavalink service must use a prebuilt image.
+
+        Using the official ghcr.io/lavalink-devs/lavalink image (rather than a local
+        build) allows Watchtower to detect and pull newer releases automatically.
+        A locally built image has no registry to compare against, so Watchtower cannot
+        update it.
+        """
+        lavalink = self.compose.get("services", {}).get("lavalink", {})
+        self.assertIn(
+            "image",
+            lavalink,
+            "The lavalink service must declare 'image:' so Watchtower can pull updates.",
+        )
+        self.assertNotIn(
+            "build",
+            lavalink,
+            "The lavalink service must not use 'build:' — a local build cannot be "
+            "auto-updated by Watchtower.",
         )
 
 

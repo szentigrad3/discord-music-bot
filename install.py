@@ -5,6 +5,7 @@ Interactive Python installer with Docker support.
 Supports Windows, macOS, and Linux.
 """
 
+import json
 import os
 import sys
 import platform
@@ -433,9 +434,9 @@ class Installer:
       - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower:
-    # Watches only services labelled com.centurylinklabs.watchtower.enable=true (i.e. yt-cipher).
+    # Watches services labelled com.centurylinklabs.watchtower.enable=true (yt-cipher and lavalink).
     # Checks for a new image every 24 hours and restarts the container if one is found.
-    # This ensures yt-cipher picks up cipher fixes without requiring a manual restart.
+    # This ensures yt-cipher picks up cipher fixes and lavalink picks up new releases automatically.
     image: containrrr/watchtower:latest
     restart: unless-stopped
     environment:
@@ -450,6 +451,7 @@ class Installer:
         lavalink_service = f"""
   lavalink:
     image: {Installer.LAVALINK_IMAGE}
+    pull_policy: always # Always pull to get the latest Lavalink release.
     restart: unless-stopped
     environment:
       - _JAVA_OPTIONS=-Xmx1G --enable-native-access=ALL-UNNAMED
@@ -464,6 +466,9 @@ class Installer:
       - "{lavalink_port}"
     depends_on:
       - yt-cipher
+    labels:
+      # Allow Watchtower to auto-update lavalink when a new image is published.
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
       # curl is available in the official Lavalink Docker image
       test: ["CMD-SHELL", "curl -sf http://localhost:{lavalink_port}/version -H \\"Authorization: $$LAVALINK_SERVER_PASSWORD\\" || exit 1"]
@@ -548,6 +553,24 @@ class Installer:
             print(f"{Colors.GREEN}Removed 'settings Example.json'{Colors.END}")
 
     # ------------------------------------------------------------------ lavalink config writer
+
+    @staticmethod
+    def _record_lavalink_version(install_dir: Path) -> None:
+        """Query GitHub for the latest Lavalink release tag and save it.
+
+        Writes ``lavalink/.lavalink-version`` so that ``update_lavalink.py``
+        can detect whether a newer release is available without re-downloading
+        the JAR unnecessarily.  Failures are non-fatal.
+        """
+        api_url = 'https://api.github.com/repos/lavalink-devs/Lavalink/releases/latest'
+        try:
+            with urllib.request.urlopen(api_url, timeout=10) as resp:
+                tag = json.loads(resp.read().decode()).get('tag_name', '').lstrip('v')
+            if tag:
+                version_file = install_dir / 'lavalink' / '.lavalink-version'
+                version_file.write_text(tag, encoding='utf-8')
+        except Exception:
+            pass  # Non-fatal: update_lavalink.py will re-download if the version is unknown.
 
     @staticmethod
     def _write_lavalink_config(
@@ -888,6 +911,7 @@ logging:
                 jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
                 if not jar_dest.exists():
                     self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
+                    self._record_lavalink_version(install_dir)
                 else:
                     print(f"{Colors.GREEN}Lavalink.jar already present, skipping download.{Colors.END}")
 
