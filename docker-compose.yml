@@ -15,9 +15,9 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower:
-    # Watches only services labelled com.centurylinklabs.watchtower.enable=true (i.e. yt-cipher).
+    # Watches services labelled com.centurylinklabs.watchtower.enable=true (yt-cipher and lavalink).
     # Checks for a new image every 24 hours and restarts the container if one is found.
-    # This ensures yt-cipher picks up cipher fixes without requiring a manual restart.
+    # This ensures yt-cipher picks up cipher fixes and lavalink picks up new releases automatically.
     image: containrrr/watchtower:latest
     restart: unless-stopped
     environment:
@@ -29,9 +29,8 @@ services:
     command: --label-enable --interval 86400
 
   lavalink:
-    build:
-      context: ./lavalink
-      dockerfile: ./Dockerfile-lavalink
+    image: ghcr.io/lavalink-devs/lavalink:latest
+    pull_policy: always # Always pull to get the latest Lavalink release.
     restart: unless-stopped
     environment:
       - _JAVA_OPTIONS=-Xmx1G --enable-native-access=ALL-UNNAMED
@@ -46,8 +45,12 @@ services:
       - "2333"
     depends_on:
       - yt-cipher
+    labels:
+      # Allow Watchtower to auto-update lavalink when a new image is published.
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 2333"]
+      # curl is available in the official Lavalink Docker image
+      test: ["CMD-SHELL", "curl -sf http://localhost:2333/version -H \"Authorization: $$LAVALINK_SERVER_PASSWORD\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
