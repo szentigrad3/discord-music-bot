@@ -75,7 +75,26 @@ class TestLavalinkConfig(unittest.TestCase):
             "See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
         )
 
-    def test_remote_cipher_configured(self):
+    def test_mweb_client_in_clients_list(self):
+        """MWEB client must be present as a cipher-free fallback.
+
+        When the remote cipher service fails (e.g. yt-dlp/ejs 'no solutions' error caused
+        by YouTube updating their obfuscated player script), the TV (TVHTML5) client cannot
+        decrypt stream URLs. The MWEB (mobile web) client does not require cipher decryption,
+        so it provides a working fallback. See:
+        https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients
+        """
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertIn(
+            "MWEB",
+            clients,
+            "The 'MWEB' client is required as a cipher-free fallback when the remote "
+            "cipher service cannot solve YouTube's obfuscated player script. "
+            "See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
+        )
+
+
         """A remoteCipher URL must be configured to handle YouTube sig function extraction.
 
         The TV (TVHTML5) client fails with 'Must find sig function from script' when
@@ -227,7 +246,65 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "yt-cipher should not be present when lavalink is disabled.",
         )
 
-    def test_both_config_files_always_written(self):
+    def test_generated_compose_has_watchtower_when_lavalink_enabled(self):
+        """install.py must generate docker-compose.yml with Watchtower when lavalink is enabled.
+
+        Watchtower monitors yt-cipher and automatically pulls and restarts it when a
+        new image is published. This ensures cipher fixes are applied without requiring
+        a manual restart. yt-dlp/ejs (which yt-cipher depends on) releases fixes for
+        YouTube player script changes, and without Watchtower users must manually run
+        'docker compose pull && docker compose up -d' to get those fixes.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        self.assertIn(
+            "watchtower",
+            compose.get("services", {}),
+            "docker-compose.yml must include the watchtower service when lavalink is enabled "
+            "so that yt-cipher cipher fixes are applied automatically.",
+        )
+
+    def test_generated_compose_no_watchtower_when_lavalink_disabled(self):
+        """When lavalink is disabled, watchtower should not be included in docker-compose."""
+        compose = self._generate_docker_compose(enable_lavalink=False)
+        self.assertNotIn(
+            "watchtower",
+            compose.get("services", {}),
+            "watchtower should not be present when lavalink is disabled.",
+        )
+
+    def test_generated_compose_yt_cipher_has_watchtower_label(self):
+        """yt-cipher must have the Watchtower enable label so it is auto-updated.
+
+        Without the label, Watchtower (running in --label-enable mode) will not
+        monitor yt-cipher, and cipher fixes will not be applied automatically.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        yt_cipher = compose.get("services", {}).get("yt-cipher", {})
+        labels = yt_cipher.get("labels", [])
+        self.assertIn(
+            "com.centurylinklabs.watchtower.enable=true",
+            labels,
+            "The yt-cipher service must have the Watchtower enable label so Watchtower "
+            "can auto-update it when cipher fixes are released.",
+        )
+
+    def test_generated_config_has_mweb_client(self):
+        """install.py must include MWEB in the YouTube clients list.
+
+        MWEB (mobile web) does not require cipher decryption. When the remote cipher
+        service fails (e.g. yt-dlp/ejs 'no solutions' for a new YouTube player script),
+        MWEB provides a working fallback for video playback.
+        """
+        config = self._generate_config(use_docker=True)
+        clients = config["plugins"]["youtube"].get("clients", [])
+        self.assertIn(
+            "MWEB",
+            clients,
+            "install.py must include MWEB in the youtube clients list as a cipher-free "
+            "fallback. See https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients",
+        )
+
+
         """_write_lavalink_config must always write both application.yml and application.docker.yml.
 
         application.yml  — non-Docker config (public cipher)
@@ -327,6 +404,32 @@ class TestDockerCompose(unittest.TestCase):
             "file:/opt/lavalink/application.docker.yml.",
         )
 
+    def test_compose_has_watchtower_service(self):
+        """The committed docker-compose.yml must include the Watchtower service.
+
+        Watchtower monitors yt-cipher and automatically pulls and restarts it when a
+        new image is published. This ensures cipher fixes (e.g. for YouTube player
+        script changes that cause 'no solutions' errors in yt-dlp/ejs) are applied
+        without manual intervention.
+        """
+        self.assertIn(
+            "watchtower",
+            self.compose.get("services", {}),
+            "docker-compose.yml must include the watchtower service so yt-cipher "
+            "cipher fixes are applied automatically when new images are published.",
+        )
+
+    def test_compose_yt_cipher_has_watchtower_label(self):
+        """The yt-cipher service in the committed docker-compose.yml must have the Watchtower enable label."""
+        yt_cipher = self.compose.get("services", {}).get("yt-cipher", {})
+        labels = yt_cipher.get("labels", [])
+        self.assertIn(
+            "com.centurylinklabs.watchtower.enable=true",
+            labels,
+            "The yt-cipher service must have the Watchtower enable label so Watchtower "
+            "automatically updates it when new cipher-fixing images are published.",
+        )
+
 
 class TestLavalinkDockerConfig(unittest.TestCase):
     """Validates the committed lavalink/application.docker.yml is correctly configured for Docker."""
@@ -368,6 +471,21 @@ class TestLavalinkDockerConfig(unittest.TestCase):
         youtube = self._get_youtube_config()
         clients = youtube.get("clients", [])
         self.assertIn("TV", clients)
+
+    def test_docker_config_mweb_client_present(self):
+        """MWEB client must be present in application.docker.yml as a cipher-free fallback.
+
+        When yt-cipher returns 'no solutions' (e.g. yt-dlp/ejs cannot handle a new YouTube
+        player script variant), the TV (TVHTML5) client fails. MWEB does not require cipher
+        decryption and provides a working fallback for video playback.
+        """
+        youtube = self._get_youtube_config()
+        clients = youtube.get("clients", [])
+        self.assertIn(
+            "MWEB",
+            clients,
+            "application.docker.yml must include MWEB as a cipher-free fallback client.",
+        )
 
 
 if __name__ == "__main__":
