@@ -173,7 +173,7 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
     try:
         proc = await asyncio.create_subprocess_exec(
-            'java', '-jar', str(jar_path),
+            'java', '--enable-native-access=ALL-UNNAMED', '-jar', str(jar_path),
             cwd=str(jar_path.parent),
             stdin=asyncio.subprocess.DEVNULL,
             stdout=log_file,

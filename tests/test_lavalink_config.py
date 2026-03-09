@@ -443,6 +443,9 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
 DOCKER_COMPOSE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "docker-compose.yml"
 )
+DOCKERFILE_LAVALINK_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "lavalink", "Dockerfile-lavalink"
+)
 
 
 class TestDockerCompose(unittest.TestCase):
@@ -613,6 +616,55 @@ class TestLavalinkDockerConfig(unittest.TestCase):
             "IOS",
             clients,
             "application.docker.yml must include IOS as a reliable fallback client.",
+        )
+
+
+
+
+class TestLavalinkDockerfile(unittest.TestCase):
+    """Validates that lavalink/Dockerfile-lavalink is correctly configured."""
+
+    def setUp(self):
+        with open(DOCKERFILE_LAVALINK_PATH, "r") as f:
+            self.dockerfile_contents = f.read()
+
+    def test_dockerfile_entrypoint_has_native_access_flag(self):
+        """The Dockerfile ENTRYPOINT must include --enable-native-access=ALL-UNNAMED.
+
+        When the Lavalink container is run without docker-compose (i.e. without the
+        _JAVA_OPTIONS env var), the JVM will not receive the flag automatically.
+        Embedding it in the ENTRYPOINT ensures it is always present and eliminates
+        the 'WARNING: A terminally deprecated method in sun.misc.Unsafe has been called'
+        warning emitted by Netty on every startup.
+        """
+        self.assertIn(
+            "--enable-native-access=ALL-UNNAMED",
+            self.dockerfile_contents,
+            "lavalink/Dockerfile-lavalink ENTRYPOINT must include "
+            "--enable-native-access=ALL-UNNAMED to suppress sun.misc.Unsafe warnings "
+            "from Netty on Java 21+.",
+        )
+
+
+class TestLavalinkDirectLaunch(unittest.TestCase):
+    """Validates that the non-Docker Lavalink auto-start path passes the correct JVM flags."""
+
+    def test_launch_lavalink_passes_native_access_flag(self):
+        """_launch_lavalink() must pass --enable-native-access=ALL-UNNAMED to Java.
+
+        When the bot starts Lavalink directly (non-Docker, via asyncio.create_subprocess_exec),
+        the JVM will not pick up _JAVA_OPTIONS set in docker-compose.yml. Without the flag,
+        Netty logs 'WARNING: A terminally deprecated method in sun.misc.Unsafe has been called'
+        and those calls will eventually be blocked entirely.
+        """
+        main_path = os.path.join(os.path.dirname(__file__), "..", "bot", "main.py")
+        with open(main_path, "r") as f:
+            source = f.read()
+        self.assertIn(
+            "--enable-native-access=ALL-UNNAMED",
+            source,
+            "bot/main.py _launch_lavalink() must pass --enable-native-access=ALL-UNNAMED "
+            "to java so Netty's sun.misc.Unsafe warnings are suppressed even outside Docker.",
         )
 
 
