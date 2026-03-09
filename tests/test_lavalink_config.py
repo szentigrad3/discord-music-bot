@@ -363,6 +363,49 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "to prevent Spring Cloud Config startup failure.",
         )
 
+    def test_generated_compose_lavalink_has_native_access_jvm_flag(self):
+        """Docker compose lavalink service must pass --enable-native-access=ALL-UNNAMED to the JVM.
+
+        Lavalink runs on Java 21+ where sun.misc.Unsafe::allocateMemory and
+        java.lang.System::loadLibrary (used by Netty) are restricted. Without this flag,
+        Lavalink logs 'WARNING: A terminally deprecated method in sun.misc.Unsafe has been called'
+        and 'WARNING: Restricted methods will be blocked in a future release unless native access
+        is enabled' on every startup, and those calls will eventually be blocked entirely.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        lavalink = compose.get("services", {}).get("lavalink", {})
+        env = lavalink.get("environment", [])
+        java_options = next(
+            (e for e in env if isinstance(e, str) and e.startswith("_JAVA_OPTIONS=")),
+            None,
+        )
+        self.assertIsNotNone(java_options, "Lavalink service must set _JAVA_OPTIONS.")
+        self.assertIn(
+            "--enable-native-access=ALL-UNNAMED",
+            java_options,
+            "Lavalink _JAVA_OPTIONS must include --enable-native-access=ALL-UNNAMED to "
+            "suppress sun.misc.Unsafe and restricted-method warnings from Netty.",
+        )
+
+    def test_generated_compose_watchtower_has_docker_api_version(self):
+        """Docker compose watchtower service must set DOCKER_API_VERSION=1.44.
+
+        By default, Watchtower negotiates Docker API version 1.25. Docker daemons shipped
+        with modern Docker Engine (24+) require at least API 1.44 and reject older clients
+        with 'client version 1.25 is too old. Minimum supported API version is 1.44'.
+        Setting DOCKER_API_VERSION=1.44 forces the Watchtower Docker client to use a
+        compatible API version.
+        """
+        compose = self._generate_docker_compose(enable_lavalink=True)
+        watchtower = compose.get("services", {}).get("watchtower", {})
+        env = watchtower.get("environment", [])
+        self.assertIn(
+            "DOCKER_API_VERSION=1.44",
+            env,
+            "Watchtower service must set DOCKER_API_VERSION=1.44 so it is compatible with "
+            "modern Docker daemons that require at least API version 1.44.",
+        )
+
 
 DOCKER_COMPOSE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "docker-compose.yml"
@@ -428,6 +471,43 @@ class TestDockerCompose(unittest.TestCase):
             labels,
             "The yt-cipher service must have the Watchtower enable label so Watchtower "
             "automatically updates it when new cipher-fixing images are published.",
+        )
+
+    def test_compose_lavalink_has_native_access_jvm_flag(self):
+        """The committed docker-compose.yml lavalink service must pass --enable-native-access=ALL-UNNAMED.
+
+        Lavalink runs on Java 21+ where sun.misc.Unsafe::allocateMemory and
+        java.lang.System::loadLibrary (used by Netty) are restricted. Without this flag,
+        Lavalink logs deprecation warnings on every startup and those calls will eventually
+        be blocked entirely.
+        """
+        env = self._get_lavalink_env()
+        java_options = next(
+            (e for e in env if isinstance(e, str) and e.startswith("_JAVA_OPTIONS=")),
+            None,
+        )
+        self.assertIsNotNone(java_options, "Lavalink service must set _JAVA_OPTIONS.")
+        self.assertIn(
+            "--enable-native-access=ALL-UNNAMED",
+            java_options,
+            "Lavalink _JAVA_OPTIONS must include --enable-native-access=ALL-UNNAMED to "
+            "suppress sun.misc.Unsafe and restricted-method warnings from Netty.",
+        )
+
+    def test_compose_watchtower_has_docker_api_version(self):
+        """The committed docker-compose.yml watchtower service must set DOCKER_API_VERSION=1.44.
+
+        By default, Watchtower negotiates Docker API version 1.25. Docker daemons shipped
+        with modern Docker Engine (24+) require at least API 1.44 and reject older clients
+        with 'client version 1.25 is too old. Minimum supported API version is 1.44'.
+        """
+        watchtower = self.compose.get("services", {}).get("watchtower", {})
+        env = watchtower.get("environment", [])
+        self.assertIn(
+            "DOCKER_API_VERSION=1.44",
+            env,
+            "Watchtower service must set DOCKER_API_VERSION=1.44 so it is compatible with "
+            "modern Docker daemons that require at least API version 1.44.",
         )
 
 

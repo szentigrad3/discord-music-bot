@@ -438,6 +438,10 @@ class Installer:
     # This ensures yt-cipher picks up cipher fixes without requiring a manual restart.
     image: containrrr/watchtower:latest
     restart: unless-stopped
+    environment:
+      # Without this, Watchtower negotiates Docker API 1.25, which is rejected by newer
+      # Docker daemons that require at least API 1.44.
+      - DOCKER_API_VERSION=1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     command: --label-enable --interval 86400
@@ -448,7 +452,7 @@ class Installer:
     image: {Installer.LAVALINK_IMAGE}
     restart: unless-stopped
     environment:
-      - _JAVA_OPTIONS=-Xmx1G
+      - _JAVA_OPTIONS=-Xmx1G --enable-native-access=ALL-UNNAMED
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
       - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
