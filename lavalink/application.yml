@@ -19,17 +19,25 @@ plugins:
       - WEBEMBEDDED
       - TVHTML5_SIMPLY
       - TV
+    # The below section of the config allows setting specific options for each client, such as the requests they will handle.
+    # If an option, or client, is unspecified, then the default option value/client values will be used instead.
+    # If a client is configured, but is not registered above, the options for that client will be ignored.
+    # WARNING!: THE BELOW CONFIG IS FOR ILLUSTRATION PURPOSES. DO NOT COPY OR USE THIS WITHOUT
+    # WARNING!: UNDERSTANDING WHAT IT DOES. MISCONFIGURATION WILL HINDER YOUTUBE-SOURCE'S ABILITY TO WORK PROPERLY.
+
+    # Write the names of clients as they are specified under the heading "Available Clients".
+    clientOptions:
+      WEB:
+        # Example: Disabling a client's playback capabilities.
+        playback: false
+        videoLoading: false # Disables loading of videos for this client. A client may still be used for playback even if this is set to 'false'.
+      WEBEMBEDDED:
+        # Example: Configuring a client to exclusively be used for video loading and playback.
+        playlistLoading: false # Disables loading of playlists and mixes.
+        searching: false # Disables the ability to search for videos.
     oauth:
-      # setting "enabled: true" is the bare minimum to get OAuth working.
       enabled: true
-
-      # you may optionally set your refresh token if you have one, which skips the OAuth flow entirely.
-      # once you have completed the oauth flow at least once, you should see your refresh token within your
-      # lavalink logs, which can be used here.
-      #refreshToken: "your refresh token, only supply this if you have one!"
-
-      # Set this if you don't want the OAuth flow to be triggered, if you intend to supply a refresh token
-      # later on via REST routes. Initialization is skipped automatically if a valid refresh token is supplied.
+      # refreshToken: "your refresh token, only supply this if you have one!"
       skipInitialization: false
     remoteCipher:
       url: "https://cipher.kikkia.dev/" # Public yt-cipher instance for YouTube sig function extraction. See https://github.com/kikkia/yt-cipher
