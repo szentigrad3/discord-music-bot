@@ -988,5 +988,103 @@ class TestInstallerWriteLavalinkConfigTemplateApplied(unittest.TestCase):
             "skipInitialization must remain false when no refresh token is provided.",
         )
 
+
+class TestInstallerIsInRepo(unittest.TestCase):
+    """Validates _is_in_repo detection used for standalone bootstrap."""
+
+    def test_returns_true_for_cloned_repo(self):
+        """_is_in_repo must return True when the path contains both bot/ and requirements.txt."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'bot').mkdir()
+            (d / 'requirements.txt').write_text('discord.py\n', encoding='utf-8')
+            self.assertTrue(
+                Installer._is_in_repo(d),
+                "_is_in_repo must return True when bot/ dir and requirements.txt are present.",
+            )
+
+    def test_returns_false_for_empty_directory(self):
+        """_is_in_repo must return False for an empty directory."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            self.assertFalse(
+                Installer._is_in_repo(d),
+                "_is_in_repo must return False for an empty directory.",
+            )
+
+    def test_returns_false_without_requirements_txt(self):
+        """_is_in_repo must return False when requirements.txt is absent."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'bot').mkdir()
+            # No requirements.txt — not a valid repo checkout.
+            self.assertFalse(
+                Installer._is_in_repo(d),
+                "_is_in_repo must return False when requirements.txt is absent.",
+            )
+
+    def test_returns_false_without_bot_dir(self):
+        """_is_in_repo must return False when the bot/ sub-directory is absent."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'requirements.txt').write_text('discord.py\n', encoding='utf-8')
+            # No bot/ directory — not a valid repo checkout.
+            self.assertFalse(
+                Installer._is_in_repo(d),
+                "_is_in_repo must return False when bot/ directory is absent.",
+            )
+
+    def test_returns_true_for_actual_repo(self):
+        """_is_in_repo must return True for the actual repository the tests run from."""
+        repo_root = Path(__file__).parent.parent
+        self.assertTrue(
+            Installer._is_in_repo(repo_root),
+            f"_is_in_repo must return True for the actual repo root ({repo_root}).",
+        )
+
+
+class TestInstallerLavalinkJarNotDownloadedForDocker(unittest.TestCase):
+    """Validates that Lavalink.jar is not required for Docker installs."""
+
+    def test_no_jar_in_docker_check_files(self):
+        """Docker installs must not require Lavalink.jar (the image bundles it)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            # Create all Docker install files except Lavalink.jar.
+            (d / 'settings.json').write_text('{}', encoding='utf-8')
+            (d / 'docker-compose.yml').write_text('', encoding='utf-8')
+            lv = d / 'lavalink'
+            lv.mkdir()
+            (lv / 'application.yml').write_text('', encoding='utf-8')
+            (lv / 'application.docker.yml').write_text('', encoding='utf-8')
+            (lv / 'logs').mkdir()
+            (lv / 'plugins').mkdir()
+            (d / 'data' / 'sfx').mkdir(parents=True)
+            missing = Installer._check_files(d, use_docker=True, enable_lavalink=True, enable_dashboard=False)
+            self.assertNotIn(
+                'lavalink/Lavalink.jar', missing,
+                "Lavalink.jar must NOT be required for Docker installs.",
+            )
+
+    def test_jar_required_for_nondocker_install(self):
+        """Non-Docker installs must require Lavalink.jar when lavalink is enabled."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'settings.json').write_text('{}', encoding='utf-8')
+            lv = d / 'lavalink'
+            lv.mkdir()
+            (lv / 'application.yml').write_text('', encoding='utf-8')
+            (lv / 'application.docker.yml').write_text('', encoding='utf-8')
+            (lv / 'logs').mkdir()
+            (lv / 'plugins').mkdir()
+            (d / 'data' / 'sfx').mkdir(parents=True)
+            # Lavalink.jar intentionally absent.
+            missing = Installer._check_files(d, use_docker=False, enable_lavalink=True, enable_dashboard=False)
+            self.assertIn(
+                'lavalink/Lavalink.jar', missing,
+                "Lavalink.jar must be required for non-Docker installs with lavalink enabled.",
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

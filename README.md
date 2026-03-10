@@ -26,18 +26,29 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 
 ## Setup
 
-### 1. Clone & install
+### 1. Install
 
-Run the provided installer — it checks prerequisites, walks you through
-an interactive configuration wizard, writes `settings.json` and
-`docker-compose.yml`, downloads `lavalink/Lavalink.jar`, then launches
-all services via Docker:
+#### One-liner (standalone — no prior clone needed)
+
+Download the installer and run it. It will fetch the bot's source code from
+GitHub automatically when it detects that it is not already running from inside
+a cloned repository:
 
 ```bash
-git clone <repo-url>
+curl -L -o install.py https://raw.githubusercontent.com/szentigrad3/discord-music-bot/main/install.py
+python install.py
+```
+
+#### From a cloned repository
+
+```bash
+git clone https://github.com/szentigrad3/discord-music-bot.git
 cd discord-music-bot
 python install.py
 ```
+
+The interactive wizard checks prerequisites, walks you through configuration,
+writes `settings.json` and `docker-compose.yml`, and launches all services.
 
 Or install manually (without Docker, installs packages into the active Python environment):
 
