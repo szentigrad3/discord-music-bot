@@ -35,8 +35,8 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PYTHON_CMD_NAME = os.path.basename(sys.executable)
 VERSION_FILE = os.path.join(ROOT_DIR, "version.txt")
-VERSION_URL = "https://raw.githubusercontent.com/szentigrad3/discord-music-bot/master/version.txt"
-DOWNLOAD_URL = "https://github.com/szentigrad3/discord-music-bot/archive/refs/heads/master.zip"
+VERSION_URL = "https://raw.githubusercontent.com/szentigrad3/discord-music-bot/main/version.txt"
+DOWNLOAD_URL = "https://github.com/szentigrad3/discord-music-bot/archive/refs/heads/main.zip"
 
 
 def _read_local_version() -> str:
@@ -61,13 +61,13 @@ class bcolors:
 
 
 def check_version(with_msg: bool = False) -> str:
-    """Check for the latest version on the master branch.
+    """Check for the latest version on the main branch.
 
     Args:
         with_msg: When True, print whether the bot is up-to-date.
 
     Returns:
-        The latest version string read from master's ``version.txt``.
+        The latest version string read from main's ``version.txt``.
     """
     response = requests.get(VERSION_URL, timeout=10)
     response.raise_for_status()
@@ -88,10 +88,10 @@ def check_version(with_msg: bool = False) -> str:
 
 
 def download_file(version: str | None = None) -> requests.Response:
-    """Download the master branch zip from GitHub.
+    """Download the main branch zip from GitHub.
 
     Args:
-        version: Used only for the progress message.  The master branch is
+        version: Used only for the progress message.  The main branch is
             only downloaded when the version increases.
 
     Returns:
@@ -145,11 +145,12 @@ def install(response: requests.Response, version: str) -> None:
     zfile = zipfile.ZipFile(BytesIO(response.content))
     zfile.extractall(ROOT_DIR)
 
-    # The extracted folder is named discord-music-bot-master.
-    source_dir = os.path.join(ROOT_DIR, "discord-music-bot-master")
+    # Detect the top-level directory name from the zip archive (e.g. discord-music-bot-main).
+    source_dir_name = zfile.namelist()[0].split("/")[0]
+    source_dir = os.path.join(ROOT_DIR, source_dir_name)
 
     if os.path.exists(source_dir):
-        skip_names = set(IGNORE_FILES + ["discord-music-bot-master"])
+        skip_names = set(IGNORE_FILES + [source_dir_name])
         for filename in os.listdir(ROOT_DIR):
             if filename in skip_names:
                 continue
