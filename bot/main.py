@@ -160,6 +160,20 @@ def _clean_corrupted_plugins(plugins_dir: Path) -> None:
                 logger.warning('Could not remove %s: %s', jar.name, exc)
 
 
+def _run_lavalink_updater() -> None:
+    """Run the Lavalink JAR and plugin updater for non-Docker installations.
+
+    Errors are caught and logged so a transient network failure does not
+    prevent the bot from starting.
+    """
+    try:
+        import update_lavalink
+        update_lavalink.update_lavalink_jar()
+        update_lavalink.update_lavalink_plugins()
+    except Exception as exc:
+        logger.warning('Lavalink auto-update failed (will use existing version): %s', exc)
+
+
 async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     jar_path = Path(__file__).parent.parent / 'lavalink' / 'Lavalink.jar'
     if not jar_path.exists():
@@ -226,6 +240,7 @@ async def main() -> None:
 
     lavalink_proc = None
     if os.environ.get('BOT_IN_DOCKER', '').lower() != 'true':
+        _run_lavalink_updater()
         lavalink_proc = await _launch_lavalink()
     if not await _wait_for_lavalink():
         if lavalink_proc is not None:

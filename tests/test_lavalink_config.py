@@ -731,6 +731,55 @@ class TestLavalinkDirectLaunch(unittest.TestCase):
         )
 
 
+class TestRunLavalinkUpdater(unittest.TestCase):
+    """Validates the _run_lavalink_updater() helper in bot/main.py."""
+
+    def test_calls_update_lavalink_jar_and_plugins(self):
+        """_run_lavalink_updater() must call update_lavalink_jar() and update_lavalink_plugins()."""
+        from unittest.mock import MagicMock, patch
+        import sys
+
+        mock_module = MagicMock()
+        with patch.dict(sys.modules, {'update_lavalink': mock_module}):
+            import bot.main as bot_main
+            bot_main._run_lavalink_updater()
+
+        mock_module.update_lavalink_jar.assert_called_once()
+        mock_module.update_lavalink_plugins.assert_called_once()
+
+    def test_logs_warning_on_jar_update_error(self):
+        """_run_lavalink_updater() must log a warning and not raise when update_lavalink_jar() fails."""
+        from unittest.mock import MagicMock, patch
+        import sys
+
+        mock_module = MagicMock()
+        mock_module.update_lavalink_jar.side_effect = RuntimeError("network error")
+        with patch.dict(sys.modules, {'update_lavalink': mock_module}):
+            import bot.main as bot_main
+            with patch.object(bot_main.logger, 'warning') as mock_warning:
+                # Must not raise.
+                bot_main._run_lavalink_updater()
+                mock_warning.assert_called_once()
+                args = mock_warning.call_args[0]
+                self.assertIn('auto-update failed', args[0])
+
+    def test_logs_warning_on_plugin_update_error(self):
+        """_run_lavalink_updater() must log a warning and not raise when update_lavalink_plugins() fails."""
+        from unittest.mock import MagicMock, patch
+        import sys
+
+        mock_module = MagicMock()
+        mock_module.update_lavalink_plugins.side_effect = RuntimeError("network error")
+        with patch.dict(sys.modules, {'update_lavalink': mock_module}):
+            import bot.main as bot_main
+            with patch.object(bot_main.logger, 'warning') as mock_warning:
+                # Must not raise.
+                bot_main._run_lavalink_updater()
+                mock_warning.assert_called_once()
+                args = mock_warning.call_args[0]
+                self.assertIn('auto-update failed', args[0])
+
+
 class TestInstallerCheckFiles(unittest.TestCase):
     """Validates the _check_files post-installation file verification."""
 
