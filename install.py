@@ -374,11 +374,86 @@ class Installer:
     LAVALINK_JAR_URL = (
         'https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar'
     )
+    # GitHub repository — used for self-bootstrapping when the installer is run standalone
+    GITHUB_REPO = 'szentigrad3/discord-music-bot'
+    GITHUB_BRANCH = 'main'
 
     def __init__(self) -> None:
         self.cfg_mgr  = ConfigurationManager()
         self.file_mgr = FileManager()
         self.docker   = DockerManager()
+
+    # ------------------------------------------------------------------ source bootstrap
+
+    @staticmethod
+    def _is_in_repo(path: Path) -> bool:
+        """Return True if *path* contains a cloned copy of the bot's source code."""
+        return (path / 'bot').is_dir() and (path / 'requirements.txt').is_file()
+
+    def _ensure_source_present(self, install_dir: Path) -> bool:
+        """Download the bot's source code into *install_dir* when it is not already present.
+
+        This is the self-bootstrapping step that makes the installer usable as a
+        standalone curl download.  It tries ``git clone`` first; if git is not
+        available it falls back to downloading the GitHub zip archive.
+
+        Returns True when the source is present after this call, False on failure.
+        """
+        if self._is_in_repo(install_dir):
+            return True  # Source already present — running from a cloned repo.
+
+        print(f"{Colors.CYAN}Bot source not found in {install_dir}. Downloading from GitHub…{Colors.END}")
+
+        # --- Try git clone ---
+        git_ok, _, _ = self.docker.run('git --version', timeout=10)
+        if git_ok:
+            print(f"{Colors.CYAN}Cloning repository with git…{Colors.END}")
+            clone_url = f'https://github.com/{self.GITHUB_REPO}.git'
+            ok, _, stderr = self.docker.run(
+                f'git clone --depth 1 --branch {self.GITHUB_BRANCH} "{clone_url}" "{install_dir}"',
+                timeout=120,
+            )
+            if ok and self._is_in_repo(install_dir):
+                print(f"{Colors.GREEN}Repository cloned successfully.{Colors.END}")
+                return True
+            if not ok:
+                print(f"{Colors.YELLOW}git clone failed: {stderr} — falling back to archive download…{Colors.END}")
+
+        # --- Fallback: download zip archive from GitHub ---
+        archive_url = (
+            f'https://github.com/{self.GITHUB_REPO}/archive/refs/heads/{self.GITHUB_BRANCH}.zip'
+        )
+        archive_path = install_dir.parent / f'discord-music-bot-{self.GITHUB_BRANCH}.zip'
+        print(f"{Colors.CYAN}Downloading source archive from GitHub…{Colors.END}")
+        try:
+            urllib.request.urlretrieve(archive_url, archive_path)
+        except Exception as exc:
+            print(f"{Colors.RED}Failed to download source archive: {exc}{Colors.END}")
+            return False
+
+        # GitHub archives have a single top-level directory (e.g. ``discord-music-bot-main/``).
+        # zipfile always uses forward slashes as path separators regardless of the OS.
+        try:
+            with zipfile.ZipFile(archive_path) as zf:
+                top_dirs = {p.split('/')[0] for p in zf.namelist() if '/' in p}
+                top_dir = top_dirs.pop() if len(top_dirs) == 1 else None
+                zf.extractall(install_dir.parent)
+            archive_path.unlink(missing_ok=True)
+            # Rename the extracted folder to the requested install_dir name.
+            if top_dir:
+                extracted = install_dir.parent / top_dir
+                if extracted.is_dir() and extracted.resolve() != install_dir.resolve():
+                    extracted.rename(install_dir)
+        except Exception as exc:
+            print(f"{Colors.RED}Failed to extract source archive: {exc}{Colors.END}")
+            return False
+
+        if self._is_in_repo(install_dir):
+            print(f"{Colors.GREEN}Source downloaded and extracted successfully.{Colors.END}")
+            return True
+
+        print(f"{Colors.RED}Source extraction completed but bot source not found in {install_dir}.{Colors.END}")
+        return False
 
     # ------------------------------------------------------------------ banner
 
@@ -605,6 +680,7 @@ class Installer:
     def _write_lavalink_config(
         install_dir: Path,
         config: dict[str, Any],
+        _template_dir: Path | None = None,
     ) -> None:
         port      = config.get('lavalink_port', '2333')
         password  = config.get('lavalink_password', 'youshallnotpass')
@@ -621,10 +697,11 @@ class Installer:
         FileManager.mkdir(lavalink_dir / 'logs')
         FileManager.mkdir(lavalink_dir / 'plugins')
 
-        # Template files live in the same directory as install.py.  Use them as
-        # the source so that any future additions to the shipped templates are
-        # automatically included without modifying this installer.
-        script_dir = Path(__file__).parent
+        # Template files live in the same directory as install.py (when running
+        # from a cloned repo) or in install_dir (when the source was bootstrapped
+        # by _ensure_source_present).  The caller passes _template_dir explicitly
+        # when it differs from the script's own directory.
+        script_dir = _template_dir if _template_dir is not None else Path(__file__).parent
         templates = {
             'application.yml':        script_dir / 'lavalink' / 'application.yml',
             'application.docker.yml': script_dir / 'lavalink' / 'application.docker.yml',
@@ -991,10 +1068,36 @@ logging:
                     return False
                 print(f"{Colors.GREEN}✅  Docker and Docker Compose are available.{Colors.END}")
 
-            # Installation directory
-            default_dir = Path(__file__).parent.resolve()
+            # Installation directory.  When the installer is run standalone (not
+            # from within a cloned repo) the default is a new sub-directory named
+            # after the project so the source download has a clean target.
+            script_dir = Path(__file__).parent.resolve()
+            if self._is_in_repo(script_dir):
+                default_dir = script_dir
+            else:
+                default_dir = script_dir / 'discord-music-bot'
             install_dir = self.cfg_mgr.collect_install_dir(default_dir)
             FileManager.mkdir(install_dir)
+
+            # Ensure the bot source code is present.  This is a no-op when
+            # running from a cloned repo; it bootstraps from GitHub otherwise.
+            self.cfg_mgr._section("📥  FETCHING BOT SOURCE", Colors.BLUE)
+            if not self._ensure_source_present(install_dir):
+                print(
+                    f"{Colors.RED}Could not obtain the bot source code. "
+                    f"Please clone the repository manually and re-run install.py from inside it:{Colors.END}\n"
+                    f"  git clone https://github.com/{self.GITHUB_REPO}.git\n"
+                    f"  cd discord-music-bot\n"
+                    f"  python install.py"
+                )
+                return False
+            print(f"{Colors.GREEN}✅  Bot source is present.{Colors.END}")
+
+            # Determine the directory that holds the shipped template files.
+            # When the script itself lives inside the repo, use the script's
+            # directory; otherwise (standalone download) use install_dir which
+            # now contains the freshly cloned source.
+            template_dir = script_dir if self._is_in_repo(script_dir) else install_dir
 
             # Basic config
             config = self.cfg_mgr.collect_basic()
@@ -1033,17 +1136,20 @@ logging:
 
             # Write configuration files
             self.cfg_mgr._section("📝  WRITING CONFIGURATION FILES", Colors.BLUE)
-            self._write_settings(install_dir, config)
+            self._write_settings(install_dir, config, _template_dir=template_dir)
             if use_docker:
                 self._write_docker_compose(install_dir, config, enable_lavalink, enable_dashboard)
             if enable_lavalink:
-                self._write_lavalink_config(install_dir, config)
-                jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
-                if not jar_dest.exists():
-                    self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
-                    self._record_lavalink_version(install_dir)
-                else:
-                    print(f"{Colors.GREEN}Lavalink.jar already present, skipping download.{Colors.END}")
+                self._write_lavalink_config(install_dir, config, _template_dir=template_dir)
+                # The Lavalink JAR is only needed for non-Docker installs; in
+                # Docker mode the official Lavalink image bundles the JAR itself.
+                if not use_docker:
+                    jar_dest = install_dir / 'lavalink' / 'Lavalink.jar'
+                    if not jar_dest.exists():
+                        self.file_mgr.download(self.LAVALINK_JAR_URL, jar_dest)
+                        self._record_lavalink_version(install_dir)
+                    else:
+                        print(f"{Colors.GREEN}Lavalink.jar already present, skipping download.{Colors.END}")
 
             # Create data directory
             FileManager.mkdir(install_dir / 'data' / 'sfx')
