@@ -619,6 +619,7 @@ class TestInstallPreservesDockerCredentials(unittest.TestCase):
                 patch.object(update, "ROOT_DIR", tmpdir),
                 patch("builtins.input", return_value="y"),
                 patch.object(update, "_run_pip_install"),
+                patch.object(update, "_is_docker_setup", return_value=False),
             ):
                 update.install(response, "v2.0.0")
 
@@ -847,6 +848,107 @@ class TestMainLatestFlag(unittest.TestCase):
                             update.main()
         mock_dl.assert_called_once_with("v1.2.4")
         mock_install.assert_called_once_with(fake_dl_response, "v1.2.4")
+
+
+class TestIsDockerSetup(unittest.TestCase):
+    """Tests for _is_docker_setup()."""
+
+    def test_returns_false_when_no_compose_file(self):
+        """_is_docker_setup must return False when docker-compose.yml is absent."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                self.assertFalse(update._is_docker_setup())
+
+    def test_returns_false_when_docker_unavailable(self):
+        """_is_docker_setup must return False when 'docker info' fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write("services:\n")
+            mock_result = MagicMock()
+            mock_result.returncode = 1
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("update.subprocess.run", return_value=mock_result),
+            ):
+                self.assertFalse(update._is_docker_setup())
+
+    def test_returns_true_when_docker_running_and_compose_present(self):
+        """_is_docker_setup must return True when docker-compose.yml exists and Docker is running."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write("services:\n")
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("update.subprocess.run", return_value=mock_result),
+            ):
+                self.assertTrue(update._is_docker_setup())
+
+    def test_returns_false_when_docker_raises_oserror(self):
+        """_is_docker_setup must return False when the docker binary is not found."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write("services:\n")
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("update.subprocess.run", side_effect=OSError("not found")),
+            ):
+                self.assertFalse(update._is_docker_setup())
+
+
+class TestInstallDockerNonDockerBranching(unittest.TestCase):
+    """Tests that install() runs the correct post-install step for Docker vs non-Docker."""
+
+    def _make_response(self, zip_bytes: bytes) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.content = zip_bytes
+        return mock_resp
+
+    def test_install_calls_docker_compose_build_when_docker_setup(self):
+        """install() must call _run_docker_compose_build() and skip pip when Docker is detected."""
+        zip_bytes = _make_zip(
+            "discord-music-bot-main",
+            {"version.txt": "v2.0.0"},
+        )
+        response = self._make_response(zip_bytes)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("builtins.input", return_value="y"),
+                patch.object(update, "_is_docker_setup", return_value=True),
+                patch.object(update, "_run_docker_compose_build") as mock_docker,
+                patch.object(update, "_run_pip_install") as mock_pip,
+            ):
+                update.install(response, "v2.0.0")
+
+        mock_docker.assert_called_once()
+        mock_pip.assert_not_called()
+
+    def test_install_calls_pip_install_when_not_docker_setup(self):
+        """install() must call _run_pip_install() and skip docker compose when no Docker."""
+        zip_bytes = _make_zip(
+            "discord-music-bot-main",
+            {"version.txt": "v2.0.0"},
+        )
+        response = self._make_response(zip_bytes)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("builtins.input", return_value="y"),
+                patch.object(update, "_is_docker_setup", return_value=False),
+                patch.object(update, "_run_docker_compose_build") as mock_docker,
+                patch.object(update, "_run_pip_install") as mock_pip,
+            ):
+                update.install(response, "v2.0.0")
+
+        mock_pip.assert_called_once()
+        mock_docker.assert_not_called()
 
 
 if __name__ == "__main__":

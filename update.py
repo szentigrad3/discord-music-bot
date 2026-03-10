@@ -123,6 +123,51 @@ def _run_pip_install() -> None:
     print(f"{bcolors.OKGREEN}Dependencies installed.{bcolors.ENDC}")
 
 
+def _is_docker_setup() -> bool:
+    """Return True when a docker-compose.yml is present and Docker is running.
+
+    This is used to decide whether ``install()`` should rebuild the Docker
+    Compose stack instead of running ``pip install`` directly.
+    """
+    compose_file = os.path.join(ROOT_DIR, "docker-compose.yml")
+    if not os.path.exists(compose_file):
+        return False
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _run_docker_compose_build() -> None:
+    """Rebuild and restart the Docker Compose stack after an update."""
+    print("Rebuilding and restarting Docker containers...")
+    try:
+        subprocess.run(
+            ["docker", "compose", "up", "-d", "--build"],
+            check=True,
+            cwd=ROOT_DIR,
+            timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"{bcolors.FAIL}docker compose up timed out. "
+            f"Run `docker compose up -d --build` manually to start your bot.{bcolors.ENDC}"
+        )
+        return
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print(
+            f"{bcolors.FAIL}Failed to rebuild Docker containers: {exc}\n"
+            f"Run `docker compose up -d --build` manually to start your bot.{bcolors.ENDC}"
+        )
+        return
+    print(f"{bcolors.OKGREEN}Docker containers updated and restarted.{bcolors.ENDC}")
+
+
 def _read_docker_secrets() -> dict[str, str | None]:
     """Read persisted credentials from existing config files before an update.
 
@@ -396,11 +441,15 @@ def install(response: requests.Response, version: str) -> None:
     # Restore preserved credentials in the freshly extracted docker configs.
     _patch_docker_files(secrets)
 
-    _run_pip_install()
-    print(
-        f"{bcolors.OKGREEN}Version {version} installed successfully! "
-        f"Run `{PYTHON_CMD_NAME} -m bot.main` to start your bot.{bcolors.ENDC}"
-    )
+    if _is_docker_setup():
+        _run_docker_compose_build()
+        print(f"{bcolors.OKGREEN}Version {version} installed successfully!{bcolors.ENDC}")
+    else:
+        _run_pip_install()
+        print(
+            f"{bcolors.OKGREEN}Version {version} installed successfully! "
+            f"Run `{PYTHON_CMD_NAME} -m bot.main` to start your bot.{bcolors.ENDC}"
+        )
 
 
 def parse_args() -> argparse.Namespace:
