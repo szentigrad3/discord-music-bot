@@ -383,11 +383,15 @@ def install(response: requests.Response, version: str) -> None:
             else:
                 os.remove(filename_path)
         for filename in os.listdir(source_dir):
-            shutil.move(
-                os.path.join(source_dir, filename),
-                os.path.join(ROOT_DIR, filename),
-            )
-        os.rmdir(source_dir)
+            dst = os.path.join(ROOT_DIR, filename)
+            if filename in IGNORE_FILES and os.path.exists(dst):
+                # The destination already contains user data that must be
+                # preserved.  Moving the archive copy into an existing
+                # directory would cause shutil.move to nest it (e.g.
+                # data/data), so skip it entirely.
+                continue
+            shutil.move(os.path.join(source_dir, filename), dst)
+        shutil.rmtree(source_dir)
 
     # Restore preserved credentials in the freshly extracted docker configs.
     _patch_docker_files(secrets)

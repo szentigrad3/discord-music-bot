@@ -197,6 +197,49 @@ class TestInstall(unittest.TestCase):
                 "settings.json must be preserved across updates",
             )
 
+    def test_install_does_not_raise_when_ignore_dir_exists_in_archive(self):
+        """install() must not raise shutil.Error when an IGNORE_FILES directory
+        (e.g. 'data') exists in both the archive and ROOT_DIR.
+
+        Previously shutil.move would try to move the archive's 'data' directory
+        *into* the existing ROOT_DIR 'data' directory, producing a nested path
+        like 'data/data' that already exists and raising:
+            shutil.Error: Destination path '.../data/data' already exists
+        """
+        # Archive ships a 'data' dir (common in GitHub zips as a placeholder).
+        zip_bytes = _make_zip(
+            "discord-music-bot-main",
+            {"data/.gitkeep": "", "version.txt": "v2.0.0"},
+        )
+        response = self._make_response(zip_bytes)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Simulate an existing user 'data' directory with real content.
+            data_dir = os.path.join(tmpdir, "data")
+            os.makedirs(data_dir)
+            user_file = os.path.join(data_dir, "playlists.json")
+            with open(user_file, "w") as f:
+                f.write('{"playlists": []}')
+
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("builtins.input", return_value="y"),
+                patch.object(update, "_run_pip_install"),
+            ):
+                # Must not raise shutil.Error.
+                update.install(response, "v2.0.0")
+
+            # The user's data directory must still be intact.
+            self.assertTrue(
+                os.path.exists(user_file),
+                "User data file must be preserved across updates",
+            )
+            # There must be no nested 'data/data' directory.
+            self.assertFalse(
+                os.path.exists(os.path.join(data_dir, "data")),
+                "data/data nesting must not occur",
+            )
+
     def test_install_canceled_on_no(self):
         """install() must abort when the user declines the confirmation prompt."""
         zip_bytes = _make_zip("discord-music-bot-main", {"version.txt": "v2.0.0"})
