@@ -534,8 +534,10 @@ class Installer:
       - SERVER_PORT={lavalink_port}
       - LAVALINK_SERVER_PASSWORD={lavalink_password}
       - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
-      # Quoted because the trailing colon would otherwise be parsed as a YAML mapping key.
-      - "SPRING_CONFIG_IMPORT=optional:configserver:"
+      # Disables Spring Cloud Config Server discovery entirely.
+      # Without this, Lavalink attempts to contact http://localhost:8888 three times at
+      # startup and logs "Connection refused" warnings even though the server does not exist.
+      - SPRING_CLOUD_CONFIG_ENABLED=false
     volumes:
       - ./lavalink:/opt/lavalink
     expose:
