@@ -21,14 +21,18 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 
 ## Requirements
 
-- Python 3.13+
-- **Lavalink** server (included in Docker Compose setup)
+| Requirement | Standalone (no Docker) | Docker |
+|---|---|---|
+| Python 3.13+ | ✅ Required | Optional — only needed if you use `install.py` or `update.py` scripts |
+| Java 17+ | ✅ Required (runs Lavalink) | ❌ Not needed (Lavalink runs in its own container) |
+| [ffmpeg](https://ffmpeg.org/download.html) | ✅ Required | ❌ Not needed (included in bot image) |
+| Docker ≥ 20.10 + Compose v2 | ❌ Not needed | ✅ Required |
 
-## Setup
+## Setup — Standalone (without Docker)
 
-### 1. Install
+Use this path if you prefer to run everything directly on your host without Docker.
 
-#### One-liner (standalone — no prior clone needed)
+### Quick install (recommended)
 
 Download the installer and run it. It will fetch the bot's source code from
 GitHub automatically when it detects that it is not already running from inside
@@ -38,13 +42,82 @@ a cloned repository:
 curl -L -o install.py https://raw.githubusercontent.com/szentigrad3/discord-music-bot/main/install.py
 python install.py
 ```
+
 The interactive wizard checks prerequisites, walks you through configuration,
-writes `settings.json` and `docker-compose.yml`, and launches all services.
+writes `settings.json` and `lavalink/application.yml`, then starts Lavalink and
+the bot automatically.
+
+### Manual install
+
+If you prefer to set things up yourself:
+
+**1. Clone the repository**
+
+```bash
+git clone https://github.com/szentigrad3/discord-music-bot.git
+cd discord-music-bot
+```
+
+**2. Install Python dependencies**
+
+```bash
+pip install -r requirements.txt
+```
+
+**3. Configure `settings.json`**
+
+```bash
+cp 'settings Example.json' settings.json
+```
+
+Open `settings.json` and fill in the required values (see the
+[Configuration](#configuration-settingsjson) table for details). For standalone
+mode, leave `lavalink.host` as `localhost`.
+
+**4. Download and start Lavalink**
+
+Lavalink requires Java 17 or newer. Download the latest release:
+
+```bash
+# Create the lavalink directory if it doesn't exist
+mkdir -p lavalink
+
+# Download Lavalink.jar
+curl -L -o lavalink/Lavalink.jar \
+  https://github.com/lavalink-devs/Lavalink/releases/latest/download/Lavalink.jar
+```
+
+The `lavalink/application.yml` file configures the server and ships with the
+repository. If you used the installer it will have been written for you; if you
+cloned manually, it is already present. The file points to the public
+`cipher.kikkia.dev` service for YouTube cipher resolution. Start Lavalink in a
+separate terminal or as a background process:
+
+```bash
+java -jar lavalink/Lavalink.jar
+```
+
+Wait until you see `Lavalink is ready to accept connections.` in the output before
+starting the bot.
+
+**5. Start the bot**
+
+```bash
+python -m bot.main
+```
+
+**6. Start the dashboard (optional)**
+
+```bash
+python -m bot.dashboard.app
+```
+
+The dashboard will be available at `http://localhost:3000` (or the port set in
+`dashboard_port`).
 
 ### Updating
 
-Use `update.py` to check for and apply new releases (mirrors the Vocard
-update-script pattern):
+Use `update.py` to check for and apply new releases:
 
 ```bash
 # Check whether your local version is up-to-date
@@ -59,18 +132,6 @@ python update.py -v v1.2.0
 
 Your `settings.json` file and `data/` directory are preserved automatically during
 an update.
-
-### 2. Start the bot
-
-```bash
-python -m bot.main
-```
-
-### 3. Start the dashboard (optional)
-
-```bash
-python -m bot.dashboard.app
-```
 
 ## Running with systemd
 
@@ -151,39 +212,85 @@ sudo systemctl restart discord-music-bot
 
 ## Docker
 
+Use this path if you want a fully containerised deployment. The Compose stack
+manages every component for you.
+
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) ≥ 20.10
 - [Docker Compose](https://docs.docker.com/compose/install/) v2 (`docker compose` — note: no hyphen)
 
-### 1. Clone the repository
+### Services
+
+The `docker-compose.yml` file defines four services:
+
+| Service | Image | Purpose |
+|---------|-------|---------|
+| `bot` | Built from `Dockerfile` | The Discord music bot |
+| `lavalink` | `ghcr.io/lavalink-devs/lavalink:latest` | Audio streaming server |
+| `yt-cipher` | `ghcr.io/kikkia/yt-cipher:master` | YouTube cipher resolver (bypasses age/region blocks) |
+| `watchtower` | `containrrr/watchtower:latest` | Automatically pulls updated images for `lavalink` and `yt-cipher` every 24 hours |
+
+`lavalink` waits until `yt-cipher` is ready, and `bot` waits until `lavalink`
+passes its health-check before starting.
+
+### Quick install (recommended)
+
+Download the installer and run it. It will fetch the bot's source code from
+GitHub automatically when it detects that it is not already running from inside
+a cloned repository:
+
+```bash
+curl -L -o install.py https://raw.githubusercontent.com/szentigrad3/discord-music-bot/main/install.py
+python install.py
+```
+
+The interactive wizard checks prerequisites, walks you through configuration,
+writes `settings.json` and `docker-compose.yml`, and launches all services.
+
+### Manual install
+
+**1. Clone the repository**
 
 ```bash
 git clone https://github.com/szentigrad3/discord-music-bot.git
 cd discord-music-bot
 ```
 
-### 2. Configure settings
+**2. Configure `settings.json`**
 
 ```bash
 cp 'settings Example.json' settings.json
 ```
 
-Open `settings.json` and fill in the required values (see the [Configuration](#configuration-settingsjson) table for details). At minimum you need:
+Open `settings.json` and fill in the required values (see the
+[Configuration](#configuration-settingsjson) table for details). At minimum you
+need:
 
 - `token` — your Discord bot token
 - `client_id` — your Discord application client ID
-- `lavalink.host` — leave as `localhost` (auto-resolved to the Compose service name inside Docker)
+- `lavalink.host` — set to `lavalink` (the Compose service name; the bot container
+  resolves this automatically via Docker networking). If you previously used
+  `localhost`, update this value.
 
-### 3. Start all services
+> **Dashboard port** — the dashboard is exposed on port 3000 by default. To use a
+> different port set `DASHBOARD_PORT` in your environment before running Compose:
+> ```bash
+> DASHBOARD_PORT=8080 docker compose up -d
+> ```
+> or add `DASHBOARD_PORT=8080` to a `.env` file in the project root.
+
+**3. Start all services**
 
 ```bash
 docker compose up -d
 ```
 
-This builds the bot image, starts the Lavalink server, and launches the bot in the background. The dashboard will be available at `http://localhost:3000`.
+This builds the bot image, starts `yt-cipher`, `lavalink`, and the bot in the
+background. The dashboard will be available at `http://localhost:3000` (or your
+custom `DASHBOARD_PORT`).
 
-### 4. View logs
+**4. View logs**
 
 ```bash
 # All services
@@ -194,9 +301,12 @@ docker compose logs -f bot
 
 # Lavalink only
 docker compose logs -f lavalink
+
+# yt-cipher only
+docker compose logs -f yt-cipher
 ```
 
-### 5. Stop / restart
+**5. Stop / restart**
 
 ```bash
 # Stop all services (containers removed, data volumes kept)
@@ -206,7 +316,7 @@ docker compose down
 docker compose restart bot
 ```
 
-### 6. Rebuild after code changes
+**6. Rebuild after code changes**
 
 If you modify source files or `requirements.txt`, rebuild the bot image before starting:
 
@@ -214,7 +324,25 @@ If you modify source files or `requirements.txt`, rebuild the bot image before s
 docker compose up -d --build
 ```
 
-### 7. Auto-start with systemd (optional)
+### Updating (Docker)
+
+`lavalink` and `yt-cipher` images are updated automatically every 24 hours by
+Watchtower — no manual action needed.
+
+To update the bot itself, pull the latest code and rebuild:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Or run `update.py` which handles the pull and rebuild for you:
+
+```bash
+python update.py -l
+```
+
+### Auto-start with systemd (optional)
 
 To have the Docker Compose stack start automatically on boot and restart on failure, wrap it in a systemd unit file.
 
@@ -392,7 +520,7 @@ Place `.mp3` files in `data/sfx/` and use `/sfx <name>` (without extension).
 | `session_secret` | Dashboard | Flask session secret |
 | `dashboard_port` | Optional | Dashboard port (default: `3000`) |
 | `database_url` | ✅ | SQLite file path (e.g. `file:./data/bot.db`) |
-| `lavalink.host` | ✅ | Lavalink server host (default: `localhost`; auto-set to `lavalink` inside Docker) |
+| `lavalink.host` | ✅ | Lavalink server host (`localhost` for standalone; `lavalink` for Docker Compose) |
 | `lavalink.port` | Optional | Lavalink server port (default: `2333`) |
 | `lavalink.password` | Optional | Lavalink server password (default: `youshallnotpass`) |
 | `log_level` | Optional | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (default: `INFO`; overridable via `LOG_LEVEL` env var) |
