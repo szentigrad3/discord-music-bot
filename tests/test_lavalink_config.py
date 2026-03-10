@@ -1,5 +1,6 @@
 """Tests for Lavalink application.yml configuration."""
 
+import json
 import os
 import sys
 import tempfile
@@ -730,5 +731,262 @@ class TestLavalinkDirectLaunch(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
+class TestInstallerCheckFiles(unittest.TestCase):
+    """Validates the _check_files post-installation file verification."""
+
+    def _make_full_install(self, tmpdir: Path, use_docker: bool, enable_lavalink: bool) -> None:
+        """Create all files that a complete installation would produce."""
+        (tmpdir / 'settings.json').write_text('{}', encoding='utf-8')
+        if use_docker:
+            (tmpdir / 'docker-compose.yml').write_text('', encoding='utf-8')
+        if enable_lavalink:
+            lv = tmpdir / 'lavalink'
+            lv.mkdir()
+            (lv / 'application.yml').write_text('', encoding='utf-8')
+            (lv / 'application.docker.yml').write_text('', encoding='utf-8')
+            (lv / 'logs').mkdir()
+            (lv / 'plugins').mkdir()
+            if not use_docker:
+                (lv / 'Lavalink.jar').write_text('', encoding='utf-8')
+        (tmpdir / 'data' / 'sfx').mkdir(parents=True, exist_ok=True)
+
+    def test_no_missing_files_after_full_docker_install(self):
+        """_check_files returns an empty list when all Docker install files are present."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            self._make_full_install(d, use_docker=True, enable_lavalink=True)
+            missing = Installer._check_files(d, use_docker=True, enable_lavalink=True, enable_dashboard=False)
+            self.assertEqual(missing, [], f"Unexpected missing files: {missing}")
+
+    def test_no_missing_files_after_full_nondocker_install(self):
+        """_check_files returns an empty list when all non-Docker install files are present."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            self._make_full_install(d, use_docker=False, enable_lavalink=True)
+            missing = Installer._check_files(d, use_docker=False, enable_lavalink=True, enable_dashboard=False)
+            self.assertEqual(missing, [], f"Unexpected missing files: {missing}")
+
+    def test_reports_missing_settings_json(self):
+        """_check_files detects a missing settings.json."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            # Only create data/sfx; settings.json intentionally absent.
+            (d / 'data' / 'sfx').mkdir(parents=True)
+            missing = Installer._check_files(d, use_docker=False, enable_lavalink=False, enable_dashboard=False)
+            self.assertIn('settings.json', missing)
+
+    def test_reports_missing_docker_compose(self):
+        """_check_files detects a missing docker-compose.yml for Docker installs."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'settings.json').write_text('{}', encoding='utf-8')
+            (d / 'data' / 'sfx').mkdir(parents=True)
+            missing = Installer._check_files(d, use_docker=True, enable_lavalink=False, enable_dashboard=False)
+            self.assertIn('docker-compose.yml', missing)
+
+    def test_reports_missing_lavalink_jar_for_nondocker(self):
+        """_check_files detects a missing Lavalink.jar for non-Docker installs."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            self._make_full_install(d, use_docker=False, enable_lavalink=True)
+            # Remove the JAR to simulate a failed download.
+            (d / 'lavalink' / 'Lavalink.jar').unlink()
+            missing = Installer._check_files(d, use_docker=False, enable_lavalink=True, enable_dashboard=False)
+            self.assertIn('lavalink/Lavalink.jar', missing)
+
+    def test_no_lavalink_jar_check_for_docker_install(self):
+        """_check_files does not require Lavalink.jar for Docker installs (image is used instead)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            self._make_full_install(d, use_docker=True, enable_lavalink=True)
+            missing = Installer._check_files(d, use_docker=True, enable_lavalink=True, enable_dashboard=False)
+            self.assertNotIn('lavalink/Lavalink.jar', missing)
+
+    def test_reports_missing_lavalink_configs_when_enabled(self):
+        """_check_files detects missing lavalink config files when lavalink is enabled."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'settings.json').write_text('{}', encoding='utf-8')
+            (d / 'data' / 'sfx').mkdir(parents=True)
+            missing = Installer._check_files(d, use_docker=True, enable_lavalink=True, enable_dashboard=False)
+            self.assertIn('lavalink/application.yml', missing)
+            self.assertIn('lavalink/application.docker.yml', missing)
+
+    def test_no_lavalink_checks_when_disabled(self):
+        """_check_files skips lavalink file checks when lavalink is disabled."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / 'settings.json').write_text('{}', encoding='utf-8')
+            (d / 'docker-compose.yml').write_text('', encoding='utf-8')
+            (d / 'data' / 'sfx').mkdir(parents=True)
+            missing = Installer._check_files(d, use_docker=True, enable_lavalink=False, enable_dashboard=False)
+            self.assertEqual(missing, [], f"Unexpected missing files: {missing}")
+
+
+class TestInstallerWriteSettings(unittest.TestCase):
+    """Validates that _write_settings generates settings.json from the template."""
+
+    def _write(self, tmpdir: Path, config_overrides=None, template_dir=None):
+        config = {
+            'bot_token': 'tok123',
+            'client_id': 'cid456',
+            'discord_client_secret': 'sec789',
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+        }
+        if config_overrides:
+            config.update(config_overrides)
+        kwargs = {}
+        if template_dir is not None:
+            kwargs['_template_dir'] = template_dir
+        Installer._write_settings(tmpdir, config, **kwargs)
+        settings_path = tmpdir / 'settings.json'
+        with open(settings_path, encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_writes_user_token(self):
+        """_write_settings must store the user-provided bot token in settings.json."""
+        with tempfile.TemporaryDirectory() as tmp:
+            data = self._write(Path(tmp), {'bot_token': 'MY_TOKEN'})
+            self.assertEqual(data['token'], 'MY_TOKEN')
+
+    def test_writes_client_id(self):
+        """_write_settings must store the client ID in settings.json."""
+        with tempfile.TemporaryDirectory() as tmp:
+            data = self._write(Path(tmp), {'client_id': '999888777'})
+            self.assertEqual(data['client_id'], '999888777')
+
+    def test_writes_lavalink_port_as_int(self):
+        """_write_settings must store the Lavalink port as an integer."""
+        with tempfile.TemporaryDirectory() as tmp:
+            data = self._write(Path(tmp), {'lavalink_port': '3000'})
+            self.assertEqual(data['lavalink']['port'], 3000)
+            self.assertIsInstance(data['lavalink']['port'], int)
+
+    def test_writes_lavalink_password(self):
+        """_write_settings must store the Lavalink password."""
+        with tempfile.TemporaryDirectory() as tmp:
+            data = self._write(Path(tmp), {'lavalink_password': 'mysecret'})
+            self.assertEqual(data['lavalink']['password'], 'mysecret')
+
+    def test_removes_example_file(self):
+        """_write_settings must remove 'settings Example.json' after writing settings.json."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            # Create the example file to simulate a fresh repo checkout.
+            (d / 'settings Example.json').write_text('{}', encoding='utf-8')
+            self._write(d)
+            self.assertFalse(
+                (d / 'settings Example.json').exists(),
+                "'settings Example.json' must be removed after settings.json is written.",
+            )
+
+    def test_settings_json_is_created(self):
+        """_write_settings must create settings.json in the install directory."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            self._write(d)
+            self.assertTrue((d / 'settings.json').exists(), "settings.json must be created.")
+
+    def test_preserves_extra_template_keys(self):
+        """_write_settings must preserve any extra keys present in settings Example.json.
+
+        If a future version of settings Example.json adds new fields, the installer
+        should forward those fields to settings.json rather than silently dropping them.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            # Place a custom template with an extra key.
+            example = {
+                'token': 'placeholder',
+                'client_id': 'placeholder',
+                'client_secret': '',
+                'callback_url': 'http://localhost:3000/auth/discord/callback',
+                'spotify_client_id': '',
+                'spotify_client_secret': '',
+                'session_secret': '',
+                'dashboard_port': 3000,
+                'database_url': 'file:./data/bot.db',
+                'log_level': 'INFO',
+                'new_future_key': 'some_default_value',
+                'lavalink': {'host': 'localhost', 'port': 2333, 'password': 'youshallnotpass'},
+            }
+            (d / 'settings Example.json').write_text(json.dumps(example), encoding='utf-8')
+            # Pass template_dir so the installer reads from our custom template
+            # instead of the real repo directory.
+            data = self._write(d, template_dir=d)
+            self.assertIn(
+                'new_future_key',
+                data,
+                "Keys present in 'settings Example.json' that are not explicitly set by the "
+                "installer must be preserved in the generated settings.json.",
+            )
+
+
+class TestInstallerWriteLavalinkConfigTemplateApplied(unittest.TestCase):
+    """Validates that _write_lavalink_config applies user values to the template files."""
+
+    def _write_and_read(self, config_overrides=None, filename='application.yml'):
+        config = {
+            'lavalink_port': '2333',
+            'lavalink_password': 'youshallnotpass',
+            'spotify_client_id': '',
+            'spotify_client_secret': '',
+            'youtube_refresh_token': '',
+        }
+        if config_overrides:
+            config.update(config_overrides)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Installer._write_lavalink_config(Path(tmpdir), config)
+            config_path = Path(tmpdir) / 'lavalink' / filename
+            with open(config_path, 'r') as f:
+                return f.read()
+
+    def test_custom_port_written_to_nondocker_config(self):
+        """A custom Lavalink port must appear in application.yml."""
+        content = self._write_and_read({'lavalink_port': '9876'}, 'application.yml')
+        parsed = yaml.safe_load(content)
+        self.assertEqual(parsed['server']['port'], 9876)
+
+    def test_custom_password_written_to_docker_config(self):
+        """A custom Lavalink password must appear in application.docker.yml."""
+        content = self._write_and_read({'lavalink_password': 'supersecret'}, 'application.docker.yml')
+        parsed = yaml.safe_load(content)
+        self.assertEqual(parsed['lavalink']['server']['password'], 'supersecret')
+
+    def test_spotify_credentials_written_to_config(self):
+        """Spotify credentials must be injected into the Lavalink config files."""
+        content = self._write_and_read(
+            {'spotify_client_id': 'sp_id_abc', 'spotify_client_secret': 'sp_sec_xyz'},
+            'application.yml',
+        )
+        parsed = yaml.safe_load(content)
+        self.assertEqual(parsed['plugins']['lavasrc']['spotify']['clientId'], 'sp_id_abc')
+        self.assertEqual(parsed['plugins']['lavasrc']['spotify']['clientSecret'], 'sp_sec_xyz')
+
+    def test_youtube_refresh_token_written_and_skip_init_enabled(self):
+        """When a YouTube refresh token is provided it must be written and skipInitialization set to true."""
+        content = self._write_and_read(
+            {'youtube_refresh_token': 'my-yt-token'},
+            'application.yml',
+        )
+        parsed = yaml.safe_load(content)
+        youtube_cfg = parsed['plugins']['youtube']
+        self.assertEqual(youtube_cfg['oauth']['refreshToken'], 'my-yt-token')
+        self.assertTrue(
+            youtube_cfg['oauth']['skipInitialization'],
+            "skipInitialization must be true when a refresh token is provided.",
+        )
+
+    def test_no_youtube_refresh_token_leaves_skip_init_false(self):
+        """When no YouTube refresh token is provided, skipInitialization stays false."""
+        content = self._write_and_read({'youtube_refresh_token': ''}, 'application.yml')
+        parsed = yaml.safe_load(content)
+        youtube_cfg = parsed['plugins']['youtube']
+        self.assertFalse(
+            youtube_cfg['oauth']['skipInitialization'],
+            "skipInitialization must remain false when no refresh token is provided.",
+        )
+
+if __name__ == '__main__':
     unittest.main()
