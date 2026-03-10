@@ -185,12 +185,6 @@ writes `settings.json` and `docker-compose.yml`, and launches all services.
 `lavalink` and `yt-cipher` images are updated automatically every 24 hours by
 Watchtower — no manual action needed.
 
-To update non-docker the bot itself, pull the latest code and rebuild:
-
-```bash
-python update.py -l
-```
-
 To update docker which handles the pull and rebuild for you:
 
 ```bash
