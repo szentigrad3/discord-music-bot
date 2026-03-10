@@ -38,23 +38,8 @@ a cloned repository:
 curl -L -o install.py https://raw.githubusercontent.com/szentigrad3/discord-music-bot/main/install.py
 python install.py
 ```
-
-#### From a cloned repository
-
-```bash
-git clone https://github.com/szentigrad3/discord-music-bot.git
-cd discord-music-bot
-python install.py
-```
-
 The interactive wizard checks prerequisites, walks you through configuration,
 writes `settings.json` and `docker-compose.yml`, and launches all services.
-
-Or install manually (without Docker, installs packages into the active Python environment):
-
-```bash
-pip install -r requirements.txt
-```
 
 ### Updating
 
