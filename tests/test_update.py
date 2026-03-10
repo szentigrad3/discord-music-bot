@@ -699,5 +699,112 @@ class TestInstallPreservesDockerCredentials(unittest.TestCase):
                 self.assertIn('clientSecret: "sp-sec"', content, msg=fname)
 
 
+class TestReadLocalVersion(unittest.TestCase):
+    """Tests for _read_local_version()."""
+
+    def test_reads_version_from_file(self):
+        """_read_local_version must return the contents of version.txt, stripped."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            version_path = os.path.join(tmpdir, "version.txt")
+            with open(version_path, "w") as f:
+                f.write("v1.2.3\n")
+            with patch.object(update, "VERSION_FILE", version_path):
+                result = update._read_local_version()
+        self.assertEqual(result, "v1.2.3")
+
+    def test_returns_unknown_when_file_missing(self):
+        """_read_local_version must return 'unknown' when version.txt does not exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = os.path.join(tmpdir, "version.txt")
+            with patch.object(update, "VERSION_FILE", missing_path):
+                result = update._read_local_version()
+        self.assertEqual(result, "unknown")
+
+    def test_version_txt_has_valid_version(self):
+        """version.txt in the repository must contain a valid vX.Y.Z version string."""
+        import re
+        actual_version = update._read_local_version()
+        self.assertRegex(
+            actual_version,
+            r"^v\d+\.\d+\.\d+$",
+            msg=(
+                f"version.txt contains '{actual_version}', which is not a valid "
+                "vX.Y.Z version string. Make sure version.txt is updated when "
+                "releasing a new version."
+            ),
+        )
+
+
+class TestCheckVersion(unittest.TestCase):
+    """Tests for check_version()."""
+
+    def _mock_response(self, text: str) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.text = text
+        return mock_resp
+
+    def test_returns_remote_version(self):
+        """check_version must return the version string fetched from the remote URL."""
+        with patch("update.requests.get", return_value=self._mock_response("v1.2.3\n")):
+            result = update.check_version()
+        self.assertEqual(result, "v1.2.3")
+
+    def test_prints_up_to_date_when_versions_match(self):
+        """check_version(with_msg=True) must print an up-to-date message when local==remote."""
+        with patch("update.requests.get", return_value=self._mock_response("v1.2.3")):
+            with patch.object(update, "__version__", "v1.2.3"):
+                with patch("builtins.print") as mock_print:
+                    update.check_version(with_msg=True)
+        printed = " ".join(str(c) for c in mock_print.call_args_list)
+        self.assertIn("up-to-date", printed)
+        self.assertIn("v1.2.3", printed)
+
+    def test_prints_not_up_to_date_when_versions_differ(self):
+        """check_version(with_msg=True) must warn about the newer version when local!=remote."""
+        with patch("update.requests.get", return_value=self._mock_response("v1.2.4")):
+            with patch.object(update, "__version__", "v1.2.3"):
+                with patch("builtins.print") as mock_print:
+                    update.check_version(with_msg=True)
+        printed = " ".join(str(c) for c in mock_print.call_args_list)
+        self.assertIn("not up-to-date", printed)
+        self.assertIn("v1.2.4", printed)
+        self.assertIn("v1.2.3", printed)
+
+
+class TestMainLatestFlag(unittest.TestCase):
+    """Tests for main() --latest / -l behaviour."""
+
+    def _mock_response(self, text: str) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.text = text
+        return mock_resp
+
+    def test_already_up_to_date_message_when_versions_match(self):
+        """main() with --latest must print 'already up-to-date' and skip install when local==remote."""
+        with patch("sys.argv", ["update.py", "--latest"]):
+            with patch("update.requests.get", return_value=self._mock_response("v1.2.3")):
+                with patch.object(update, "__version__", "v1.2.3"):
+                    with patch("builtins.print") as mock_print:
+                        with patch("update.download_file") as mock_dl:
+                            update.main()
+        mock_dl.assert_not_called()
+        printed = " ".join(str(c) for c in mock_print.call_args_list)
+        self.assertIn("already up-to-date", printed)
+        self.assertIn("v1.2.3", printed)
+
+    def test_install_triggered_when_new_version_available(self):
+        """main() with --latest must download and install when remote version is newer."""
+        mock_http_resp = self._mock_response("v1.2.4")
+        fake_dl_response = MagicMock()
+        with patch("sys.argv", ["update.py", "--latest"]):
+            with patch("update.requests.get", return_value=mock_http_resp):
+                with patch.object(update, "__version__", "v1.2.3"):
+                    with patch("update.download_file", return_value=fake_dl_response) as mock_dl:
+                        with patch("update.install") as mock_install:
+                            update.main()
+        mock_dl.assert_called_once_with("v1.2.4")
+        mock_install.assert_called_once_with(fake_dl_response, "v1.2.4")
+
+
 if __name__ == "__main__":
     unittest.main()
