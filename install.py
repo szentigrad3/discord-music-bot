@@ -7,6 +7,7 @@ Supports Windows, macOS, and Linux.
 
 import json
 import os
+import re
 import sys
 import platform
 import subprocess
@@ -519,34 +520,62 @@ class Installer:
     # ------------------------------------------------------------------ settings.json writer
 
     @staticmethod
-    def _write_settings(install_dir: Path, config: dict[str, Any]) -> None:
-        data = {
-            'token': config['bot_token'],
-            'client_id': config['client_id'],
-            'client_secret': config.get('discord_client_secret', ''),
-            'callback_url': config.get('discord_callback_url', 'http://localhost:3000/auth/discord/callback'),
+    def _write_settings(
+        install_dir: Path,
+        config: dict[str, Any],
+        _template_dir: Path | None = None,
+    ) -> None:
+        # Use 'settings Example.json' from the script directory as the template
+        # so that any new keys added to the example are automatically included.
+        # _template_dir is an internal parameter used by tests to override the
+        # template source directory without touching the real repo files.
+        script_dir = _template_dir if _template_dir is not None else Path(__file__).parent
+        template_path = script_dir / 'settings Example.json'
 
-            'spotify_client_id': config.get('spotify_client_id', ''),
-            'spotify_client_secret': config.get('spotify_client_secret', ''),
+        if template_path.exists():
+            with open(template_path, encoding='utf-8') as f:
+                data: dict[str, Any] = json.load(f)
+        else:
+            # Fallback when the template file is absent (e.g. after manual deletion).
+            data = {
+                'database_url': 'file:./data/bot.db',
+                'log_level': 'INFO',
+                '_log_level_note': (
+                    'Set to DEBUG to capture all internal activity '
+                    '(also overridable via LOG_LEVEL env var)'
+                ),
+                'lavalink': {},
+            }
 
-            'session_secret': config.get('session_secret', ''),
-            'dashboard_port': int(config.get('dashboard_port', 3000)),
+        # Apply user-provided values on top of the template defaults.
+        data['token'] = config['bot_token']
+        data['client_id'] = config['client_id']
+        data['client_secret'] = config.get('discord_client_secret', '')
+        data['callback_url'] = config.get(
+            'discord_callback_url',
+            data.get('callback_url', 'http://localhost:3000/auth/discord/callback'),
+        )
+        data['spotify_client_id'] = config.get('spotify_client_id', '')
+        data['spotify_client_secret'] = config.get('spotify_client_secret', '')
+        data['session_secret'] = config.get('session_secret', '')
+        data['dashboard_port'] = int(
+            config.get('dashboard_port', data.get('dashboard_port', 3000))
+        )
+        if 'lavalink' not in data:
+            data['lavalink'] = {}
+        data['lavalink']['host'] = data['lavalink'].get('host', 'localhost')
+        data['lavalink']['port'] = int(
+            config.get('lavalink_port', data['lavalink'].get('port', 2333))
+        )
+        data['lavalink']['password'] = config.get(
+            'lavalink_password', data['lavalink'].get('password', 'youshallnotpass')
+        )
 
-            'database_url': 'file:./data/bot.db',
-
-            'log_level': 'INFO',
-            '_log_level_note': 'Set to DEBUG to capture all internal activity (also overridable via LOG_LEVEL env var)',
-            'lavalink': {
-                'host': 'localhost',
-                'port': int(config.get('lavalink_port', 2333)),
-                'password': config.get('lavalink_password', 'youshallnotpass'),
-            },
-        }
-        import json as _json
         dest = install_dir / 'settings.json'
-        dest.write_text(_json.dumps(data, indent=4) + '\n', encoding='utf-8')
+        dest.write_text(json.dumps(data, indent=4) + '\n', encoding='utf-8')
         print(f"{Colors.GREEN}Wrote settings.json{Colors.END}")
 
+        # Remove the example file from the install directory once settings.json exists.
         example = install_dir / 'settings Example.json'
         if example.exists():
             example.unlink()
@@ -577,47 +606,119 @@ class Installer:
         install_dir: Path,
         config: dict[str, Any],
     ) -> None:
-        port     = config.get('lavalink_port', '2333')
-        password = config.get('lavalink_password', 'youshallnotpass')
+        port      = config.get('lavalink_port', '2333')
+        password  = config.get('lavalink_password', 'youshallnotpass')
         sp_id     = config.get('spotify_client_id', '')
         sp_secret = config.get('spotify_client_secret', '')
         yt_token  = config.get('youtube_refresh_token', '')
 
-        spotify_enabled = "true" if sp_id else "false"
         # Escape backslashes and double-quotes so the token is safe inside a
         # YAML double-quoted scalar.
         yt_token_escaped = yt_token.replace('\\', '\\\\').replace('"', '\\"')
-        if yt_token:
-            youtube_oauth_section = (
-                f"    oauth:\n"
-                f"      enabled: true\n"
-                f"      refreshToken: \"{yt_token_escaped}\"\n"
-                f"      skipInitialization: true\n"
-            )
-        else:
-            youtube_oauth_section = (
-                f"    oauth:\n"
-                f"      enabled: true\n"
-                f"      # refreshToken: \"your refresh token, only supply this if you have one!\"\n"
-                f"      skipInitialization: false\n"
-            )
-        # remoteCipher delegates YouTube signature extraction to the yt-cipher
-        # Docker service (internal hostname) or the public instance (non-Docker).
-        docker_remote_cipher_section = (
-            "    remoteCipher:\n"
-            "      url: \"http://yt-cipher:8001\""
-            " # Remote cipher server for YouTube sig function extraction."
-            " See https://github.com/kikkia/yt-cipher\n"
-        )
-        nondocker_remote_cipher_section = (
-            "    remoteCipher:\n"
-            "      url: \"https://cipher.kikkia.dev/\""
-            " # Public yt-cipher instance for YouTube sig function extraction."
-            " See https://github.com/kikkia/yt-cipher\n"
-        )
 
-        def _build_content(remote_cipher_section: str) -> str:
-            return f"""\
+        lavalink_dir = install_dir / 'lavalink'
+        FileManager.mkdir(lavalink_dir)
+        FileManager.mkdir(lavalink_dir / 'logs')
+        FileManager.mkdir(lavalink_dir / 'plugins')
+
+        # Template files live in the same directory as install.py.  Use them as
+        # the source so that any future additions to the shipped templates are
+        # automatically included without modifying this installer.
+        script_dir = Path(__file__).parent
+        templates = {
+            'application.yml':        script_dir / 'lavalink' / 'application.yml',
+            'application.docker.yml': script_dir / 'lavalink' / 'application.docker.yml',
+        }
+        templates_exist = all(p.exists() for p in templates.values())
+
+        if templates_exist:
+            def _patch(content: str) -> str:
+                """Apply user-provided values to a Lavalink config file."""
+                # Server port
+                content = re.sub(
+                    r'^(  port:\s*)\d+',
+                    lambda m: m.group(1) + str(port),
+                    content,
+                    flags=re.MULTILINE,
+                )
+                # Lavalink server password
+                content = re.sub(
+                    r'^(    password:\s*)"[^"]*"',
+                    lambda m: m.group(1) + f'"{password}"',
+                    content,
+                    flags=re.MULTILINE,
+                )
+                # Spotify credentials
+                if sp_id:
+                    content = re.sub(
+                        r'^(      clientId:\s*)"[^"]*"',
+                        lambda m: m.group(1) + f'"{sp_id}"',
+                        content,
+                        flags=re.MULTILINE,
+                    )
+                if sp_secret:
+                    content = re.sub(
+                        r'^(      clientSecret:\s*)"[^"]*"',
+                        lambda m: m.group(1) + f'"{sp_secret}"',
+                        content,
+                        flags=re.MULTILINE,
+                    )
+                # YouTube OAuth refresh token — uncomments the placeholder line
+                # and enables skipInitialization when a token is provided.
+                if yt_token:
+                    content = re.sub(
+                        r'^( +)(#\s*)?refreshToken:\s*"[^"]*"',
+                        lambda m: m.group(1) + f'refreshToken: "{yt_token_escaped}"',
+                        content,
+                        flags=re.MULTILINE,
+                    )
+                    content = re.sub(
+                        r'^(      skipInitialization:\s*)false',
+                        r'\g<1>true',
+                        content,
+                        flags=re.MULTILINE,
+                    )
+                return content
+
+            for filename, template_path in templates.items():
+                original = template_path.read_text(encoding='utf-8')
+                patched  = _patch(original)
+                dest     = lavalink_dir / filename
+                dest.write_text(patched, encoding='utf-8')
+                print(f"{Colors.GREEN}Wrote lavalink/{filename}{Colors.END}")
+        else:
+            # Fallback: generate from the inline template when the shipped
+            # template files are not available (e.g. non-standard install path).
+            spotify_enabled = "true" if sp_id else "false"
+            if yt_token:
+                youtube_oauth_section = (
+                    f"    oauth:\n"
+                    f"      enabled: true\n"
+                    f"      refreshToken: \"{yt_token_escaped}\"\n"
+                    f"      skipInitialization: true\n"
+                )
+            else:
+                youtube_oauth_section = (
+                    f"    oauth:\n"
+                    f"      enabled: true\n"
+                    f"      # refreshToken: \"your refresh token, only supply this if you have one!\"\n"
+                    f"      skipInitialization: false\n"
+                )
+            docker_remote_cipher_section = (
+                "    remoteCipher:\n"
+                "      url: \"http://yt-cipher:8001\""
+                " # Remote cipher server for YouTube sig function extraction."
+                " See https://github.com/kikkia/yt-cipher\n"
+            )
+            nondocker_remote_cipher_section = (
+                "    remoteCipher:\n"
+                "      url: \"https://cipher.kikkia.dev/\""
+                " # Public yt-cipher instance for YouTube sig function extraction."
+                " See https://github.com/kikkia/yt-cipher\n"
+            )
+
+            def _build_content(remote_cipher_section: str) -> str:
+                return f"""\
 server: # REST and WS server
   port: {port}
   address: 0.0.0.0
@@ -817,22 +918,51 @@ logging:
       max-file-size: 1GB
       max-history: 30
 """
-        lavalink_dir = install_dir / 'lavalink'
-        FileManager.mkdir(lavalink_dir)
-        FileManager.mkdir(lavalink_dir / 'logs')
-        FileManager.mkdir(lavalink_dir / 'plugins')
+            # Non-Docker config: uses public yt-cipher instance
+            (lavalink_dir / 'application.yml').write_text(
+                _build_content(nondocker_remote_cipher_section), encoding='utf-8'
+            )
+            print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
 
-        # Non-Docker config: uses public yt-cipher instance
-        (lavalink_dir / 'application.yml').write_text(
-            _build_content(nondocker_remote_cipher_section), encoding='utf-8'
-        )
-        print(f"{Colors.GREEN}Wrote lavalink/application.yml{Colors.END}")
+            # Docker config: uses internal yt-cipher service hostname
+            (lavalink_dir / 'application.docker.yml').write_text(
+                _build_content(docker_remote_cipher_section), encoding='utf-8'
+            )
+            print(f"{Colors.GREEN}Wrote lavalink/application.docker.yml{Colors.END}")
 
-        # Docker config: uses internal yt-cipher service hostname
-        (lavalink_dir / 'application.docker.yml').write_text(
-            _build_content(docker_remote_cipher_section), encoding='utf-8'
-        )
-        print(f"{Colors.GREEN}Wrote lavalink/application.docker.yml{Colors.END}")
+    # ------------------------------------------------------------------ file checker
+
+    @staticmethod
+    def _check_files(
+        install_dir: Path,
+        use_docker: bool,
+        enable_lavalink: bool,
+        enable_dashboard: bool,
+    ) -> list[str]:
+        """Return a list of files/directories required by this installation that are missing.
+
+        The check covers every path that the installer is expected to create so
+        that problems (e.g. a failed download or a filesystem permission error)
+        are surfaced before the user tries to start the bot.
+        """
+        required: list[str] = ['settings.json']
+
+        if use_docker:
+            required.append('docker-compose.yml')
+
+        if enable_lavalink:
+            required += [
+                'lavalink/application.yml',
+                'lavalink/application.docker.yml',
+                'lavalink/logs',
+                'lavalink/plugins',
+            ]
+            if not use_docker:
+                required.append('lavalink/Lavalink.jar')
+
+        required.append('data/sfx')
+
+        return [f for f in required if not (install_dir / f).exists()]
 
     # ------------------------------------------------------------------ run
 
@@ -965,6 +1095,21 @@ logging:
                     print(f"  python -m bot.dashboard.app                   # Start the dashboard")
             print(f"\n{Colors.YELLOW}For support: https://github.com/szentigrad3/discord-music-bot{Colors.END}")
             print('=' * 60)
+
+            # Verify that all expected files were created successfully.
+            self.cfg_mgr._section("🔍  VERIFYING INSTALLATION FILES", Colors.BLUE)
+            missing = self._check_files(install_dir, use_docker, enable_lavalink, enable_dashboard)
+            if missing:
+                print(f"{Colors.YELLOW}⚠  The following required files are missing:{Colors.END}")
+                for path in missing:
+                    print(f"  {Colors.RED}✗  {path}{Colors.END}")
+                print(
+                    f"{Colors.YELLOW}Please check the errors above and re-run the installer "
+                    f"if necessary.{Colors.END}"
+                )
+            else:
+                print(f"{Colors.GREEN}✅  All required files are present.{Colors.END}")
+
             return True
 
         except KeyboardInterrupt:
