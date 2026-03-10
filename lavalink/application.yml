@@ -49,7 +49,7 @@ plugins:
       - "ytsearch:%QUERY%" # Will be used if track has no ISRC or no track could be found for the ISRC
       #  you can add multiple other fallback sources here
     sources:
-      spotify: true # Enable Spotify source
+      spotify: false # Enable Spotify source
       applemusic: false # Enable Apple Music source
       deezer: false # Enable Deezer source
       yandexmusic: false # Enable Yandex Music source
@@ -72,7 +72,7 @@ plugins:
       resolveArtistsInSearch: true # Whether to resolve artists in track search results (can be slow)
       localFiles: false # Enable local files support with Spotify playlists. Please note `uri` & `isrc` will be `null` & `identifier` will be `"local"`
       preferAnonymousToken: true # Whether to use the anonymous token for resolving tracks, artists and albums. Spotify generated playlists are always resolved with the anonymous tokens since they do not work otherwise. This requires the customTokenEndpoint to be set.
-      customTokenEndpoint: "http://spotify-tokener:49152/api/token" # Optional custom endpoint for getting the anonymous token. If not set, spotify's default endpoint will be used which might not work. The response must match spotify's anonymous token response format.
+      customTokenEndpoint: "http://spotify-tokener:49152/api/token" # Optional custom endpoint for getting the anonymous token (internal Docker service; use HTTPS if exposed externally). If not set, spotify's default endpoint will be used which might not work. The response must match spotify's anonymous token response format.
     applemusic:
       countryCode: "US" # the country code you want to use for filtering the artists top tracks and language. See https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
       mediaAPIToken: "your apple music api token" # apple music api token
@@ -128,7 +128,7 @@ lavalink:
       soundcloud: true
       twitch: true
       vimeo: true
-      nico: true
+      nico: true # Enable Niconico (NicoVideo) source
       http: true # warning: keeping HTTP enabled without a proxy configured could expose your server's IP address.
       local: false
     filters: # All filters are enabled by default

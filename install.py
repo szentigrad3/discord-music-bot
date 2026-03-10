@@ -417,7 +417,7 @@ class Installer:
         lavalink_password = config.get('lavalink_password', 'youshallnotpass')
         dashboard_port    = config.get('dashboard_port', '3000')
 
-        yt_cipher_service = """
+        yt_cipher_service = """\
   yt-cipher:
     # ghcr.io/kikkia/yt-cipher has no versioned release tags; 'master' is the only available tag.
     # The image uses a distroless base so CMD-SHELL healthchecks are not supported.
@@ -446,9 +446,10 @@ class Installer:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     command: --label-enable --interval 86400
+
 """ if enable_lavalink else ''
 
-        lavalink_service = f"""
+        lavalink_service = f"""\
   lavalink:
     image: {Installer.LAVALINK_IMAGE}
     pull_policy: always # Always pull to get the latest Lavalink release.
@@ -476,26 +477,30 @@ class Installer:
       timeout: 5s
       retries: 10
       start_period: 30s
+
 """ if enable_lavalink else ''
 
         bot_depends = ''
         if enable_lavalink:
-            bot_depends = '\n    depends_on:\n      lavalink:\n        condition: service_healthy'
+            bot_depends = '    depends_on:\n      lavalink:\n        condition: service_healthy\n'
 
-        dashboard_service = f"""
-  dashboard:
-    build: .
-    restart: unless-stopped
-    volumes:
-      - ./data:/app/data
-      - ./settings.json:/app/settings.json
-    command: ["python", "-m", "bot.dashboard.app"]
-    ports:
-      - "{dashboard_port}:{dashboard_port}"
-""" if enable_dashboard else ''
+        dashboard_service = (
+            f"  dashboard:\n"
+            f"    build: .\n"
+            f"    restart: unless-stopped\n"
+            f"    volumes:\n"
+            f"      - ./data:/app/data\n"
+            f"      - ./settings.json:/app/settings.json\n"
+            f"    command: [\"python\", \"-m\", \"bot.dashboard.app\"]\n"
+            f"    ports:\n"
+            f"      - \"{dashboard_port}:{dashboard_port}\"\n"
+            f"\n"
+        ) if enable_dashboard else ''
 
         content = (
             f"services:\n"
+            f"{yt_cipher_service}"
+            f"{lavalink_service}"
             f"  bot:\n"
             f"    build: .\n"
             f"    restart: unless-stopped\n"
@@ -505,10 +510,9 @@ class Installer:
             f"      - ./data:/app/data\n"
             f"      - ./settings.json:/app/settings.json\n"
             f"    ports:\n"
-            f"      - \"{dashboard_port}:{dashboard_port}\"\n"
-            f"{bot_depends}\n"
-            f"{yt_cipher_service}"
-            f"{lavalink_service}"
+            f"      - \"${{DASHBOARD_PORT:-3000}}:3000\"\n"
+            f"{bot_depends}"
+            f"\n"
             f"{dashboard_service}"
         )
 
