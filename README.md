@@ -60,39 +60,13 @@ python update.py -v v1.2.0
 Your `settings.json` file and `data/` directory are preserved automatically during
 an update.
 
-### 2. Configure
-
-```bash
-cp 'settings Example.json' settings.json
-```
-
-Edit `settings.json` and fill in:
-- `token` — your bot token from [Discord Developer Portal](https://discord.com/developers/applications)
-- `client_id` — your application's client ID
-- `client_secret` — OAuth2 client secret (for dashboard)
-- `callback_url` — OAuth2 callback URL (e.g. `http://localhost:3000/auth/discord/callback`)
-- `spotify_client_id` / `spotify_client_secret` — from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (optional)
-- `session_secret` — a random secret string for session cookies
-- `lavalink.host` — Lavalink server host (default: `localhost`; auto-set to `lavalink` inside Docker)
-- `lavalink.port` — Lavalink server port (default: `2333`)
-- `lavalink.password` — Lavalink server password (default: `youshallnotpass`)
-
-### 3. Deploy slash commands
-
-Slash commands are synced automatically on every bot startup. You can also
-deploy them manually before the first run:
-
-```bash
-python deploy_commands.py
-```
-
-### 4. Start the bot
+### 2. Start the bot
 
 ```bash
 python -m bot.main
 ```
 
-### 5. Start the dashboard (optional)
+### 3. Start the dashboard (optional)
 
 ```bash
 python -m bot.dashboard.app
