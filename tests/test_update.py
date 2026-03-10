@@ -1,6 +1,7 @@
 """Tests for update.py — bot auto-update helpers."""
 
 import io
+import json
 import os
 import sys
 import tempfile
@@ -10,6 +11,38 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import update  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Minimal docker config file contents used across tests
+# ---------------------------------------------------------------------------
+
+_DOCKER_COMPOSE_DEFAULT = """\
+services:
+  lavalink:
+    environment:
+      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+"""
+
+_LAVALINK_DOCKER_YML_DEFAULT = """\
+lavalink:
+  server:
+    password: "youshallnotpass"
+    oauth:
+      enabled: true
+      # refreshToken: "your refresh token, only supply this if you have one!"
+      skipInitialization: false
+"""
+
+_LAVALINK_DOCKER_YML_WITH_TOKEN = """\
+lavalink:
+  server:
+    password: "youshallnotpass"
+    oauth:
+      enabled: true
+      refreshToken: "old-yt-token"
+      skipInitialization: true
+"""
 
 
 def _make_zip(top_dir: str, files: dict[str, str]) -> bytes:
@@ -144,6 +177,229 @@ class TestDownloadUrlUseMainBranch(unittest.TestCase):
         """VERSION_URL must point to the main branch version.txt."""
         self.assertIn("main", update.VERSION_URL)
         self.assertNotIn("master", update.VERSION_URL)
+
+
+class TestReadDockerSecrets(unittest.TestCase):
+    """Tests for _read_docker_secrets()."""
+
+    def test_reads_password_from_settings_json(self):
+        """_read_docker_secrets must return the Lavalink password from settings.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = {"lavalink": {"password": "supersecret"}}
+            with open(os.path.join(tmpdir, "settings.json"), "w") as f:
+                json.dump(settings, f)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                secrets = update._read_docker_secrets()
+        self.assertEqual(secrets["lavalink_password"], "supersecret")
+
+    def test_falls_back_to_docker_compose_for_password(self):
+        """_read_docker_secrets must read the password from docker-compose.yml when settings.json has none."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write(_DOCKER_COMPOSE_DEFAULT.replace("youshallnotpass", "composepass"))
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                secrets = update._read_docker_secrets()
+        self.assertEqual(secrets["lavalink_password"], "composepass")
+
+    def test_settings_json_password_takes_priority_over_docker_compose(self):
+        """settings.json password must be preferred over docker-compose.yml password."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = {"lavalink": {"password": "from-settings"}}
+            with open(os.path.join(tmpdir, "settings.json"), "w") as f:
+                json.dump(settings, f)
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write(_DOCKER_COMPOSE_DEFAULT.replace("youshallnotpass", "from-compose"))
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                secrets = update._read_docker_secrets()
+        self.assertEqual(secrets["lavalink_password"], "from-settings")
+
+    def test_reads_youtube_refresh_token_from_lavalink_docker_yml(self):
+        """_read_docker_secrets must return the YouTube refresh token from application.docker.yml."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lavalink_dir = os.path.join(tmpdir, "lavalink")
+            os.makedirs(lavalink_dir)
+            with open(os.path.join(lavalink_dir, "application.docker.yml"), "w") as f:
+                f.write(_LAVALINK_DOCKER_YML_WITH_TOKEN)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                secrets = update._read_docker_secrets()
+        self.assertEqual(secrets["youtube_refresh_token"], "old-yt-token")
+
+    def test_youtube_refresh_token_is_none_when_commented_out(self):
+        """_read_docker_secrets must return None for youtube_refresh_token when the line is commented."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lavalink_dir = os.path.join(tmpdir, "lavalink")
+            os.makedirs(lavalink_dir)
+            with open(os.path.join(lavalink_dir, "application.docker.yml"), "w") as f:
+                f.write(_LAVALINK_DOCKER_YML_DEFAULT)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                secrets = update._read_docker_secrets()
+        self.assertIsNone(secrets["youtube_refresh_token"])
+
+    def test_returns_none_when_no_files_exist(self):
+        """_read_docker_secrets must return None values when no config files are present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                secrets = update._read_docker_secrets()
+        self.assertIsNone(secrets["lavalink_password"])
+        self.assertIsNone(secrets["youtube_refresh_token"])
+
+
+class TestPatchDockerFiles(unittest.TestCase):
+    """Tests for _patch_docker_files()."""
+
+    def test_updates_password_in_docker_compose(self):
+        """_patch_docker_files must write the preserved password into docker-compose.yml."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write(_DOCKER_COMPOSE_DEFAULT)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                update._patch_docker_files({"lavalink_password": "newpass", "youtube_refresh_token": None})
+            with open(compose_path) as f:
+                content = f.read()
+        self.assertIn("LAVALINK_SERVER_PASSWORD=newpass", content)
+        self.assertNotIn("youshallnotpass", content)
+
+    def test_updates_password_in_lavalink_docker_yml(self):
+        """_patch_docker_files must write the preserved password into application.docker.yml."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lavalink_dir = os.path.join(tmpdir, "lavalink")
+            os.makedirs(lavalink_dir)
+            with open(os.path.join(lavalink_dir, "application.docker.yml"), "w") as f:
+                f.write(_LAVALINK_DOCKER_YML_DEFAULT)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                update._patch_docker_files({"lavalink_password": "newpass", "youtube_refresh_token": None})
+            with open(os.path.join(lavalink_dir, "application.docker.yml")) as f:
+                content = f.read()
+        self.assertIn('password: "newpass"', content)
+        self.assertNotIn('password: "youshallnotpass"', content)
+
+    def test_uncomments_and_sets_youtube_refresh_token(self):
+        """_patch_docker_files must uncomment the refreshToken line and set the saved value."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lavalink_dir = os.path.join(tmpdir, "lavalink")
+            os.makedirs(lavalink_dir)
+            with open(os.path.join(lavalink_dir, "application.docker.yml"), "w") as f:
+                f.write(_LAVALINK_DOCKER_YML_DEFAULT)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                update._patch_docker_files(
+                    {"lavalink_password": None, "youtube_refresh_token": "my-yt-token"}
+                )
+            with open(os.path.join(lavalink_dir, "application.docker.yml")) as f:
+                content = f.read()
+        self.assertIn('refreshToken: "my-yt-token"', content)
+        self.assertNotIn("# refreshToken:", content)
+        self.assertIn("skipInitialization: true", content)
+        self.assertNotIn("skipInitialization: false", content)
+
+    def test_replaces_existing_youtube_refresh_token(self):
+        """_patch_docker_files must replace an already-set refreshToken with the new value."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lavalink_dir = os.path.join(tmpdir, "lavalink")
+            os.makedirs(lavalink_dir)
+            with open(os.path.join(lavalink_dir, "application.docker.yml"), "w") as f:
+                f.write(_LAVALINK_DOCKER_YML_WITH_TOKEN)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                update._patch_docker_files(
+                    {"lavalink_password": None, "youtube_refresh_token": "new-yt-token"}
+                )
+            with open(os.path.join(lavalink_dir, "application.docker.yml")) as f:
+                content = f.read()
+        self.assertIn('refreshToken: "new-yt-token"', content)
+        self.assertNotIn("old-yt-token", content)
+
+    def test_no_changes_when_secrets_are_none(self):
+        """_patch_docker_files must not modify files when both credentials are None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            with open(compose_path, "w") as f:
+                f.write(_DOCKER_COMPOSE_DEFAULT)
+            with patch.object(update, "ROOT_DIR", tmpdir):
+                update._patch_docker_files({"lavalink_password": None, "youtube_refresh_token": None})
+            with open(compose_path) as f:
+                content = f.read()
+        self.assertEqual(content, _DOCKER_COMPOSE_DEFAULT)
+
+
+class TestInstallPreservesDockerCredentials(unittest.TestCase):
+    """Tests that install() preserves docker credentials end-to-end."""
+
+    def _make_response(self, zip_bytes: bytes) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.content = zip_bytes
+        return mock_resp
+
+    def test_install_preserves_lavalink_password_in_docker_compose(self):
+        """install() must carry the existing Lavalink password into the new docker-compose.yml."""
+        zip_bytes = _make_zip(
+            "discord-music-bot-main",
+            {
+                "version.txt": "v2.0.0",
+                "docker-compose.yml": _DOCKER_COMPOSE_DEFAULT,
+                "lavalink/application.docker.yml": _LAVALINK_DOCKER_YML_DEFAULT,
+            },
+        )
+        response = self._make_response(zip_bytes)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Write old docker-compose.yml with a custom password.
+            with open(os.path.join(tmpdir, "docker-compose.yml"), "w") as f:
+                f.write(_DOCKER_COMPOSE_DEFAULT.replace("youshallnotpass", "myoldpass"))
+            # Write settings.json with matching password (preserved across updates).
+            settings = {"lavalink": {"password": "myoldpass"}}
+            with open(os.path.join(tmpdir, "settings.json"), "w") as f:
+                json.dump(settings, f)
+
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("builtins.input", return_value="y"),
+                patch.object(update, "_run_pip_install"),
+            ):
+                update.install(response, "v2.0.0")
+
+            compose_path = os.path.join(tmpdir, "docker-compose.yml")
+            self.assertTrue(os.path.exists(compose_path))
+            with open(compose_path) as f:
+                content = f.read()
+        self.assertIn("LAVALINK_SERVER_PASSWORD=myoldpass", content)
+        self.assertNotIn("youshallnotpass", content)
+
+    def test_install_preserves_youtube_refresh_token(self):
+        """install() must carry the YouTube refresh token into the new application.docker.yml."""
+        zip_bytes = _make_zip(
+            "discord-music-bot-main",
+            {
+                "version.txt": "v2.0.0",
+                "lavalink/application.docker.yml": _LAVALINK_DOCKER_YML_DEFAULT,
+            },
+        )
+        response = self._make_response(zip_bytes)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Write old lavalink config with a refresh token.
+            lavalink_dir = os.path.join(tmpdir, "lavalink")
+            os.makedirs(lavalink_dir)
+            with open(os.path.join(lavalink_dir, "application.docker.yml"), "w") as f:
+                f.write(_LAVALINK_DOCKER_YML_WITH_TOKEN)
+            with open(os.path.join(tmpdir, "settings.json"), "w") as f:
+                json.dump({}, f)
+
+            with (
+                patch.object(update, "ROOT_DIR", tmpdir),
+                patch("builtins.input", return_value="y"),
+                patch.object(update, "_run_pip_install"),
+            ):
+                update.install(response, "v2.0.0")
+
+            config_path = os.path.join(tmpdir, "lavalink", "application.docker.yml")
+            self.assertTrue(os.path.exists(config_path))
+            with open(config_path) as f:
+                content = f.read()
+        self.assertIn('refreshToken: "old-yt-token"', content)
+        self.assertNotIn("# refreshToken:", content)
+        self.assertIn("skipInitialization: true", content)
 
 
 if __name__ == "__main__":
