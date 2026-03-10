@@ -380,21 +380,22 @@ class TestInstallerGeneratedConfig(unittest.TestCase):
             "file:/opt/lavalink/application.docker.yml so it uses the Docker-specific config.",
         )
 
-    def test_generated_compose_lavalink_has_spring_config_import(self):
-        """Docker compose lavalink service must set SPRING_CONFIG_IMPORT=optional:configserver:.
+    def test_generated_compose_lavalink_has_spring_cloud_config_disabled(self):
+        """Docker compose lavalink service must set SPRING_CLOUD_CONFIG_ENABLED=false.
 
-        Without this, newer Lavalink versions fail to start with:
-        'No spring.config.import property has been defined'
-        Setting it to 'optional:configserver:' disables the Spring Cloud Config import check.
+        Without this, Lavalink attempts to contact the Spring Cloud Config Server at
+        http://localhost:8888 three times at startup and logs "Connection refused" warnings
+        even though no config server is running.  Setting SPRING_CLOUD_CONFIG_ENABLED=false
+        disables the feature entirely and eliminates the spurious connection attempts.
         """
         compose = self._generate_docker_compose(enable_lavalink=True)
         lavalink = compose.get("services", {}).get("lavalink", {})
         env = lavalink.get("environment", [])
         self.assertIn(
-            "SPRING_CONFIG_IMPORT=optional:configserver:",
+            "SPRING_CLOUD_CONFIG_ENABLED=false",
             env,
-            "Docker lavalink service must set SPRING_CONFIG_IMPORT=optional:configserver: "
-            "to prevent Spring Cloud Config startup failure.",
+            "Docker lavalink service must set SPRING_CLOUD_CONFIG_ENABLED=false "
+            "to prevent Spring Cloud Config connection attempts at startup.",
         )
 
     def test_generated_compose_lavalink_has_native_access_jvm_flag(self):
@@ -484,19 +485,20 @@ class TestDockerCompose(unittest.TestCase):
     def _get_lavalink_env(self):
         return self.compose["services"]["lavalink"].get("environment", [])
 
-    def test_lavalink_has_spring_config_import(self):
-        """The committed docker-compose.yml lavalink service must set SPRING_CONFIG_IMPORT.
+    def test_lavalink_has_spring_cloud_config_disabled(self):
+        """The committed docker-compose.yml lavalink service must set SPRING_CLOUD_CONFIG_ENABLED=false.
 
-        Without SPRING_CONFIG_IMPORT=optional:configserver:, newer Lavalink versions fail to
-        start with 'No spring.config.import property has been defined'.
+        Without this, Lavalink attempts to contact the Spring Cloud Config Server at
+        http://localhost:8888 three times at startup and logs "Connection refused" warnings
+        even though no config server is running.
         """
         env = self._get_lavalink_env()
         self.assertIn(
-            "SPRING_CONFIG_IMPORT=optional:configserver:",
+            "SPRING_CLOUD_CONFIG_ENABLED=false",
             env,
             "docker-compose.yml lavalink service must set "
-            "SPRING_CONFIG_IMPORT=optional:configserver: to prevent Spring Cloud Config "
-            "startup failure.",
+            "SPRING_CLOUD_CONFIG_ENABLED=false to prevent Spring Cloud Config "
+            "connection attempts at startup.",
         )
 
     def test_lavalink_has_spring_config_location(self):
