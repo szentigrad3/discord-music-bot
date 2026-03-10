@@ -976,6 +976,12 @@ logging:
 
 
 def main() -> None:
+    if sys.version_info < (3, 13):
+        print(
+            f"Python 3.13 or higher is required. "
+            f"You are running Python {sys.version_info.major}.{sys.version_info.minor}."
+        )
+        sys.exit(1)
     installer = Installer()
     sys.exit(0 if installer.run() else 1)
 
