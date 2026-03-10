@@ -6,7 +6,7 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 
 - 🎵 **Multi-platform**: YouTube, SoundCloud, Twitch, Spotify
 - 🔗 **Playlist support**: YouTube playlists (up to 50 tracks), Spotify albums/playlists
-- 🎛️ **Audio filters**: Nightcore, Bass Boost (powered by Lavalink)
+- 🎛️ **Audio filters**: Nightcore, Bass Boost, Vaporwave, 8D Audio, Karaoke, Slowed — use `none` to remove any active filter (powered by Lavalink)
 - 🔁 **Repeat modes**: Off, One, All
 - 🔀 **Shuffle** queue
 - 📋 **Slash commands + prefix commands**
@@ -381,8 +381,11 @@ automatically on future starts.
 | `/shuffle` | Shuffle the queue |
 | `/repeat <off\|one\|all>` | Set repeat mode |
 | `/leave` | Disconnect the bot |
-| `/filter <none\|nightcore\|bassboost>` | Apply audio filter |
+| `/filter <none\|nightcore\|bassboost\|vaporwave\|8d\|karaoke\|slowed>` | Apply audio filter |
 | `/nowplaying` | Show the current track |
+| `/seek <seconds>` | Seek to a position in the current track |
+| `/move <from> <to>` | Move a track to a different queue position |
+| `/clear` | Clear the queue without stopping the current track |
 
 ### Utility
 
