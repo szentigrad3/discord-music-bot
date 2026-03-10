@@ -266,21 +266,7 @@ plugins:
       skipInitialization: false
 ```
 
-### 2. Start Lavalink and watch the logs
-
-**Docker Compose:**
-
-```bash
-docker compose up lavalink
-```
-
-**Without Docker:**
-
-```bash
-java -jar lavalink/Lavalink.jar
-```
-
-### 3. Open the authorization URL
+### 2. Open the authorization URL
 
 Watch the Lavalink output for a line like:
 
@@ -291,7 +277,7 @@ Please visit the following URL to authorize: https://www.youtube.com/device?user
 Open that URL in your browser, sign in with your Google account, and approve the
 request. You do **not** need a special account — any Google account works.
 
-### 4. Copy the refresh token from the logs
+### 3. Copy the refresh token from the logs
 
 After authorization succeeds, Lavalink prints your refresh token:
 
@@ -299,7 +285,7 @@ After authorization succeeds, Lavalink prints your refresh token:
 Refresh token: <your-token-here>
 ```
 
-### 5. Persist the token in `application.yml`
+### 4. Persist the token in `application.yml`
 
 Add the refresh token to `lavalink/application.yml` so that Lavalink loads it on
 every startup without re-running the authorization flow:
