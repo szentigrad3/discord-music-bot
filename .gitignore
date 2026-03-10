@@ -12,3 +12,23 @@ settings.json
 *.db-journal
 data/sfx/*.mp3
 logs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE / editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Lavalink binary
+lavalink/Lavalink.jar
+lavalink/*.jar
