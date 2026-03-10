@@ -126,17 +126,26 @@ def _run_pip_install() -> None:
 def _read_docker_secrets() -> dict[str, str | None]:
     """Read persisted credentials from existing config files before an update.
 
-    Reads the Lavalink password from ``settings.json`` (which is preserved
-    across updates via :data:`IGNORE_FILES`) and the YouTube OAuth refresh
-    token from ``lavalink/application.docker.yml`` (which is overwritten
-    during updates and must therefore be captured before extraction).
+    Reads from ``settings.json`` (which is preserved across updates via
+    :data:`IGNORE_FILES`): Lavalink password, Lavalink port, and Spotify
+    credentials.  Reads the YouTube OAuth refresh token from
+    ``lavalink/application.docker.yml`` or ``lavalink/application.yml``
+    (both are overwritten during updates and must be captured beforehand).
 
     Returns:
-        Dict with keys ``lavalink_password`` and ``youtube_refresh_token``.
-        Values are ``None`` when the credential is absent or unreadable.
+        Dict with the following keys (values are ``None`` when absent):
+
+        - ``lavalink_password``
+        - ``lavalink_port``
+        - ``spotify_client_id``
+        - ``spotify_client_secret``
+        - ``youtube_refresh_token``
     """
     secrets: dict[str, str | None] = {
         "lavalink_password": None,
+        "lavalink_port": None,
+        "spotify_client_id": None,
+        "spotify_client_secret": None,
         "youtube_refresh_token": None,
     }
 
@@ -148,6 +157,18 @@ def _read_docker_secrets() -> dict[str, str | None]:
             password = data.get("lavalink", {}).get("password")
             if password:
                 secrets["lavalink_password"] = password
+            port = data.get("lavalink", {}).get("port")
+            if port is not None:
+                try:
+                    secrets["lavalink_port"] = str(int(port))
+                except (TypeError, ValueError):
+                    pass
+            spotify_id = data.get("spotify_client_id", "")
+            if spotify_id:
+                secrets["spotify_client_id"] = spotify_id
+            spotify_secret = data.get("spotify_client_secret", "")
+            if spotify_secret:
+                secrets["spotify_client_secret"] = spotify_secret
         except (OSError, ValueError):
             pass
 
@@ -163,16 +184,24 @@ def _read_docker_secrets() -> dict[str, str | None]:
             except OSError:
                 pass
 
-    lavalink_docker_config = os.path.join(ROOT_DIR, "lavalink", "application.docker.yml")
-    if os.path.exists(lavalink_docker_config):
-        try:
-            with open(lavalink_docker_config) as f:
-                content = f.read()
-            m = re.search(r'^(?: +)refreshToken:\s*"([^"]+)"', content, re.MULTILINE)
-            if m:
-                secrets["youtube_refresh_token"] = m.group(1)
-        except OSError:
-            pass
+    # Try both lavalink config files for the refresh token; the docker variant
+    # is checked first, then the non-docker variant as a fallback.
+    _refresh_token_pattern = re.compile(
+        r'^ +refreshToken:\s*"([^"]+)"', re.MULTILINE
+    )
+    for config_name in ("lavalink/application.docker.yml", "lavalink/application.yml"):
+        if secrets["youtube_refresh_token"] is not None:
+            break
+        config_path = os.path.join(ROOT_DIR, config_name)
+        if os.path.exists(config_path):
+            try:
+                with open(config_path) as f:
+                    content = f.read()
+                m = _refresh_token_pattern.search(content)
+                if m:
+                    secrets["youtube_refresh_token"] = m.group(1)
+            except OSError:
+                pass
 
     return secrets
 
@@ -180,41 +209,74 @@ def _read_docker_secrets() -> dict[str, str | None]:
 def _patch_docker_files(secrets: dict[str, str | None]) -> None:
     """Apply preserved credentials to freshly extracted docker config files.
 
-    Updates ``docker-compose.yml`` with the saved Lavalink password, and
-    updates ``lavalink/application.docker.yml`` with both the password and the
-    YouTube OAuth refresh token (if one was previously configured).
+    Updates ``docker-compose.yml`` with the saved Lavalink password and port,
+    and updates both ``lavalink/application.docker.yml`` and
+    ``lavalink/application.yml`` with the same set of values so that the
+    Docker and non-Docker configurations remain in sync:
+
+    - Lavalink server password
+    - Lavalink server port
+    - Spotify client ID and client secret
+    - YouTube OAuth refresh token
 
     Args:
         secrets: Dict returned by :func:`_read_docker_secrets`.
     """
     password = secrets.get("lavalink_password")
+    port = secrets.get("lavalink_port")
+    spotify_id = secrets.get("spotify_client_id")
+    spotify_secret = secrets.get("spotify_client_secret")
     yt_token = secrets.get("youtube_refresh_token")
 
     docker_compose = os.path.join(ROOT_DIR, "docker-compose.yml")
-    if password and os.path.exists(docker_compose):
+    if os.path.exists(docker_compose) and (password or port):
         try:
             with open(docker_compose) as f:
                 content = f.read()
-            new_content = re.sub(
-                r"(LAVALINK_SERVER_PASSWORD=)\S+",
-                lambda m: m.group(1) + password,
-                content,
-            )
+            new_content = content
+            if password:
+                new_content = re.sub(
+                    r"(LAVALINK_SERVER_PASSWORD=)\S+",
+                    lambda m: m.group(1) + password,
+                    new_content,
+                )
+            if port:
+                new_content = re.sub(
+                    r"(SERVER_PORT=)\S+",
+                    lambda m: m.group(1) + port,
+                    new_content,
+                )
             if new_content != content:
                 with open(docker_compose, "w") as f:
                     f.write(new_content)
                 print(
-                    f"{bcolors.OKGREEN}Preserved Lavalink password in docker-compose.yml{bcolors.ENDC}"
+                    f"{bcolors.OKGREEN}Preserved Lavalink credentials in docker-compose.yml{bcolors.ENDC}"
                 )
         except OSError:
             pass
 
-    lavalink_docker_config = os.path.join(ROOT_DIR, "lavalink", "application.docker.yml")
-    if os.path.exists(lavalink_docker_config):
+    for config_name in (
+        "lavalink/application.docker.yml",
+        "lavalink/application.yml",
+    ):
+        config_path = os.path.join(ROOT_DIR, config_name)
+        if not os.path.exists(config_path):
+            continue
         try:
-            with open(lavalink_docker_config) as f:
+            with open(config_path) as f:
                 content = f.read()
             changed = False
+
+            if port:
+                new_content = re.sub(
+                    r"^(  port:\s*)\d+",
+                    lambda m: m.group(1) + port,
+                    content,
+                    flags=re.MULTILINE,
+                )
+                if new_content != content:
+                    content = new_content
+                    changed = True
 
             if password:
                 new_content = re.sub(
@@ -227,8 +289,31 @@ def _patch_docker_files(secrets: dict[str, str | None]) -> None:
                     content = new_content
                     changed = True
 
+            if spotify_id:
+                new_content = re.sub(
+                    r'^(      clientId:\s*)"[^"]*"',
+                    lambda m: m.group(1) + f'"{spotify_id}"',
+                    content,
+                    flags=re.MULTILINE,
+                )
+                if new_content != content:
+                    content = new_content
+                    changed = True
+
+            if spotify_secret:
+                new_content = re.sub(
+                    r'^(      clientSecret:\s*)"[^"]*"',
+                    lambda m: m.group(1) + f'"{spotify_secret}"',
+                    content,
+                    flags=re.MULTILINE,
+                )
+                if new_content != content:
+                    content = new_content
+                    changed = True
+
             if yt_token:
-                # Handles both commented-out and already-set refreshToken lines.
+                # Handles both commented-out (#refreshToken or # refreshToken)
+                # and already-set refreshToken lines.
                 new_content = re.sub(
                     r'^( +)(#\s*)?refreshToken:\s*"[^"]*"',
                     lambda m: m.group(1) + f'refreshToken: "{yt_token}"',
@@ -247,10 +332,10 @@ def _patch_docker_files(secrets: dict[str, str | None]) -> None:
                     changed = True
 
             if changed:
-                with open(lavalink_docker_config, "w") as f:
+                with open(config_path, "w") as f:
                     f.write(content)
                 print(
-                    f"{bcolors.OKGREEN}Preserved credentials in lavalink/application.docker.yml{bcolors.ENDC}"
+                    f"{bcolors.OKGREEN}Preserved credentials in {config_name}{bcolors.ENDC}"
                 )
         except OSError:
             pass
