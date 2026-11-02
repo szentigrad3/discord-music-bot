@@ -58,5 +58,5 @@ class SavedPlaylistCogTests(unittest.IsolatedAsyncioTestCase):
             group = bot.get_command('playlist')
             self.assertIsNotNone(group)
             self.assertEqual({c.name for c in group.commands},
-                             {'save', 'list', 'load', 'delete'})
+                             {'save', 'list', 'show', 'load', 'add', 'remove', 'rename', 'delete'})
             self.assertIn('playlist', {cmd.name for cmd in bot.tree.get_commands()})
