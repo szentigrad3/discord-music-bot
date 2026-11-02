@@ -61,6 +61,9 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    # Allow the SIGTERM handler to leave Discord voice before Docker sends
+    # SIGKILL. The default 10 seconds is too short for several guilds.
+    stop_grace_period: 45s
     environment:
       - BOT_IN_DOCKER=true
     volumes:
