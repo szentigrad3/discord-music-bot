@@ -96,9 +96,12 @@ async def _resolve_via_voicelink(query: str, requested_by: str | None) -> list[T
 
 _spotify_access_token: str | None = None
 _spotify_token_expiry: float = 0.0
+_spotify_token_lock = asyncio.Lock()
 
 
 async def _ensure_spotify_token() -> bool:
+    """Refresh Spotify credentials once when many requests arrive together."""
+    import base64
     import time
     import aiohttp
 
@@ -111,31 +114,40 @@ async def _ensure_spotify_token() -> bool:
     if not client_id or not client_secret:
         return False
 
-    if time.time() < _spotify_token_expiry:
-        return True
+    async with _spotify_token_lock:
+        if _spotify_access_token and time.monotonic() < _spotify_token_expiry:
+            return True
 
-    import base64
-    credentials = base64.b64encode(f'{client_id}:{client_secret}'.encode()).decode()
-
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-            async with session.post(
-                'https://accounts.spotify.com/api/token',
-                headers={
-                    'Authorization': f'Basic {credentials}',
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                data='grant_type=client_credentials',
-            ) as resp:
-                if not resp.ok:
-                    raise RuntimeError(f'Spotify token request failed: {resp.status}')
-                data = await resp.json()
-                _spotify_access_token = data['access_token']
-                _spotify_token_expiry = time.time() + data['expires_in'] - 60
-                return True
-    except Exception as e:
-        logger.error('[Spotify] Failed to get token: %s', e)
-        return False
+        credentials = base64.b64encode(
+            f'{client_id}:{client_secret}'.encode()
+        ).decode()
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as session:
+                async with session.post(
+                    'https://accounts.spotify.com/api/token',
+                    headers={
+                        'Authorization': f'Basic {credentials}',
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    data='grant_type=client_credentials',
+                ) as resp:
+                    if not resp.ok:
+                        raise RuntimeError(f'Spotify token request failed: {resp.status}')
+                    data = await resp.json()
+            token = data.get('access_token')
+            expires = int(data.get('expires_in', 0))
+            if not isinstance(token, str) or not token or expires <= 0:
+                raise ValueError('Spotify token response was invalid.')
+            _spotify_access_token = token
+            # Refresh before expiry, using a monotonic clock.
+            _spotify_token_expiry = time.monotonic() + max(1, expires - 60)
+            return True
+        except Exception as exc:
+            logger.warning('[Spotify] Cannot refresh client token: %s',
+                           type(exc).__name__)
+            return False
 
 
 async def _spotify_get(path: str) -> dict:
