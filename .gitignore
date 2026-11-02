@@ -32,3 +32,7 @@ Thumbs.db
 # Lavalink binary
 lavalink/Lavalink.jar
 lavalink/*.jar
+
+# Private Lavalink configs imported from existing installations
+lavalink/application.local.yml
+lavalink/application.docker.local.yml
