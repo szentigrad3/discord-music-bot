@@ -174,7 +174,8 @@ def main(argv=None) -> int:
         print('  -', item)
     if args.apply:
         print('PASS: Original installation unchanged. No credentials printed.')
-        print('Next: python scripts/doctor.py && bash scripts/test-all.sh')
+        print('Next: python3 scripts/prepare_lavalink_docker.py --apply')
+        print('Then: .venv/bin/python scripts/doctor.py && bash scripts/test-all.sh')
     else:
         print('Re-run with --apply after stopping the old bot.')
     return 0
