@@ -125,3 +125,33 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertEqual(_dotenv_literal('abc$def'), "'abc$def'")
         with self.assertRaises(ValueError):
             _dotenv_literal('abc\ninvalid')
+
+    def test_generated_example_settings_are_safely_backed_up(self):
+        generated = '{"token":"example-token","lavalink":{"password":"example"}}'
+        (self.new / 'settings Example.json').write_text(generated, encoding='utf-8')
+        (self.new / 'settings.json').write_text(generated, encoding='utf-8')
+        plan = import_setup(self.old, self.new)
+        self.assertTrue(any('generated-template.backup' in item for item in plan))
+        self.assertEqual((self.new / 'settings.json').read_text(), generated)
+        import_setup(self.old, self.new, apply=True)
+        self.assertEqual((self.new / 'settings.json.generated-template.backup').read_text(), generated)
+        self.assertEqual((self.new / 'settings.json').read_bytes(),
+                         (self.old / 'settings.json').read_bytes())
+
+    def test_modified_settings_not_mistaken_for_generated_example(self):
+        (self.new / 'settings Example.json').write_text('{"token":""}')
+        (self.new / 'settings.json').write_text('{"token":"my real token"}')
+        with self.assertRaises(FileExistsError):
+            import_setup(self.old, self.new, apply=True)
+        self.assertEqual((self.new / 'settings.json').read_text(), '{"token":"my real token"}')
+        self.assertFalse((self.new / 'settings.json.generated-template.backup').exists())
+
+    def test_existing_template_backup_cannot_be_overwritten(self):
+        generated = '{"token":""}'
+        (self.new / 'settings Example.json').write_text(generated)
+        (self.new / 'settings.json').write_text(generated)
+        (self.new / 'settings.json.generated-template.backup').write_text('keep')
+        with self.assertRaises(FileExistsError):
+            import_setup(self.old, self.new, apply=True)
+        self.assertEqual((self.new / 'settings.json.generated-template.backup').read_text(),
+                         'keep')
