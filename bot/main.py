@@ -83,11 +83,28 @@ async def on_voicelink_track_end(player, track, reason: str) -> None:
     music_player = getattr(player, '_music_player', None)
     if music_player is None:
         return
-    # Only advance the queue for "normal" end reasons (finished, loadFailed, etc.)
-    # Reason 'replaced' means a new track was explicitly started, so skip
-    if reason == 'replaced':
+    # Manual STOPPED transitions are performed by skip/back/skipto under
+    # the queue lock. Acting on the subsequent node event would advance twice.
+    if str(reason).lower() in ('replaced', 'stopped'):
         return
     await music_player._on_track_end(reason=reason, ended_track=track)
+
+
+@bot.event
+async def on_voicelink_track_stuck(player, track, threshold: float) -> None:
+    music_player = getattr(player, '_music_player', None)
+    if music_player is not None:
+        logger.warning('Lavalink track stuck after %s ms', threshold)
+        await music_player._on_track_end(reason='loadFailed', ended_track=track)
+
+
+@bot.event
+async def on_voicelink_track_exception(player, track, exception: dict) -> None:
+    music_player = getattr(player, '_music_player', None)
+    if music_player is not None:
+        logger.warning('Lavalink track exception: %s',
+                       exception.get('severity', 'unknown') if isinstance(exception, dict) else 'unknown')
+        await music_player._on_track_end(reason='loadFailed', ended_track=track)
 
 
 @bot.event
