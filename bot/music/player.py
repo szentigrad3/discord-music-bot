@@ -27,6 +27,13 @@ FILTERS: dict[str, str | None] = {
 }
 
 
+MAX_PENDING_TRACKS = 500
+
+
+class QueueFullError(ValueError):
+    """Adding these tracks would exceed the per-guild queue limit."""
+
+
 class RepeatMode:
     OFF = 0
     ONE = 1
@@ -174,7 +181,7 @@ class MusicPlayer:
             if len(self.history) > 20:
                 del self.history[:-20]
 
-            if self.repeat_mode == RepeatMode.ALL:
+            if self.repeat_mode == RepeatMode.ALL and reason.lower() != 'loadfailed':
                 self.tracks.append(previous)
             self.current = None
             if self.tracks:
@@ -191,7 +198,11 @@ class MusicPlayer:
         if not tracks:
             return
         async with self._advance_lock:
-            if not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current:
+            idle = not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current
+            incoming_pending = len(tracks) - int(idle)
+            if len(self.tracks) + incoming_pending > MAX_PENDING_TRACKS:
+                raise QueueFullError(f'Queue is full (maximum {MAX_PENDING_TRACKS} waiting tracks).')
+            if idle:
                 first, *rest = tracks
                 self.tracks.extend(rest)
                 await self._play(first)
