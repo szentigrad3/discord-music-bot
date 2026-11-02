@@ -34,6 +34,16 @@ class SearchSelect(discord.ui.Select):
         self._tracks = tracks
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        member = interaction.user
+        user_channel = getattr(getattr(member, 'voice', None), 'channel', None)
+        bot_channel = getattr(self.player._vl_player, 'channel', None)
+        if (not isinstance(member, discord.Member)
+                or user_channel is None or bot_channel is None
+                or user_channel.id != bot_channel.id):
+            return await interaction.response.send_message(
+                '❌ Join the same voice channel as the bot to select a track.',
+                ephemeral=True,
+            )
         index = int(self.values[0])
         track = self._tracks[index]
         try:
