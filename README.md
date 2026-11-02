@@ -55,8 +55,12 @@ edited or loaded by other users. Use either slash commands or prefix commands:
 | Slash | Prefix example | Purpose |
 |---|---|---|
 | `/playlist save` | `!playlist save Evening Mix` | Save the current track and waiting queue |
-| `/playlist list` | `!playlist list` | List your saved playlists |
+| `/playlist list` | `!playlist list` | List your saved playlists (DM on prefix) |
+| `/playlist show` | `!playlist show "Evening Mix" 1` | View saved URLs by page (DM on prefix) |
 | `/playlist load` | `!playlist load Evening Mix` | Re-resolve and queue saved tracks |
+| `/playlist add` | `!playlist add Evening Mix` | Append the currently playing track |
+| `/playlist remove` | `!playlist remove "Evening Mix" 2` | Remove a saved track by position |
+| `/playlist rename` | `!playlist rename "Evening Mix" "Late Night"` | Rename without overwriting |
 | `/playlist delete` | `!playlist delete Evening Mix` | Remove your playlist |
 
 Each user can store up to 20 playlists per server with up to 50 tracks per
@@ -65,6 +69,15 @@ Names support letters, digits, spaces, dashes and underscores (max 40 chars).
 Playlist tracks are stored as URLs, not temporary Lavalink encoded IDs.
 Unavailable tracks are skipped during loading; YouTube/Spotify availability
 depends on active Lavalink plugins and provider access.
+
+For prefix commands, names containing spaces in multi-argument commands need
+quotes. `/playlist list` and `/playlist show` are ephemeral; their prefix
+versions DM results to avoid exposing private names/URLs to other members.
+
+The Lavalink startup connection retries automatically after a temporary outage.
+You can run `python scripts/doctor.py` for a credential-safe offline configuration
+preflight and `python scripts/lavalink_smoke.py` for a read-only live Lavalink
+HTTP check. Neither performs an audible music test.
 
 **This is under review in PR #142, not part of the published v1.2.1 release.**
 
