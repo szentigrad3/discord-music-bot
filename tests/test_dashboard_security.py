@@ -8,6 +8,15 @@ from bot.dashboard.app import app, _can_manage, _has_access
 
 class DashboardSecurityTests(unittest.TestCase):
     def setUp(self):
+        # The dashboard is optional. In real installations session_secret may
+        # be empty, which intentionally disables it. Tests must configure an
+        # isolated Flask signing key rather than borrowing production secrets.
+        self._config_patch = patch.dict(
+            app.config,
+            {'SECRET_KEY': 'dashboard-tests-only-not-a-real-credential'},
+        )
+        self._config_patch.start()
+        self.addCleanup(self._config_patch.stop)
         self.client = app.test_client()
 
     def test_cookie_settings(self):
