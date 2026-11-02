@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import threading
 import zipfile
 from pathlib import Path
+from typing import Callable
 
 import aiohttp
 import discord
@@ -238,6 +240,51 @@ def _start_dashboard() -> None:
         logger.error('[dashboard] Failed to start: %s', exc)
 
 
+async def _stop_bot_gracefully(
+    discord_bot: commands.Bot,
+    bootstrap: LavalinkBootstrap,
+    nodes: type[NodePool],
+    *,
+    timeout: float = 25.0,
+) -> None:
+    """Leave Discord voice before closing the bot gateway on SIGTERM/SIGINT.
+
+    Docker sends SIGTERM to PID 1 when stopping or replacing the container.
+    Without a handler Python exits before its asyncio finally blocks run.
+    A bounded timeout leaves enough of the Docker stop grace period to close
+    the gateway even when a Lavalink operation is unresponsive.
+    """
+    logger.info('Shutdown requested: leaving Discord voice channels.')
+    try:
+        await bootstrap.close()
+        await asyncio.wait_for(nodes.close_all(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning('Voice shutdown exceeded %.1fs; closing Discord gateway.', timeout)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception('Voice shutdown encountered an error.')
+    finally:
+        await discord_bot.close()
+        logger.info('Discord bot shutdown complete.')
+
+
+def _install_shutdown_handlers(
+    loop: asyncio.AbstractEventLoop,
+    shutdown: Callable[[], None],
+) -> list[signal.Signals]:
+    """Use asyncio signal callbacks, not a synchronous signal exit."""
+    installed = []
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, shutdown)
+        except (NotImplementedError, RuntimeError):
+            # Windows event loops cannot register POSIX signal handlers.
+            continue
+        installed.append(sig)
+    return installed
+
+
 async def main() -> None:
     setup_logging(level=settings.log_level)
     await init_db()
@@ -277,10 +324,32 @@ async def main() -> None:
             if not settings.token:
                 raise RuntimeError('token is not set in settings.json')
 
-            await bot.start(settings.token)
+            loop = asyncio.get_running_loop()
+            shutdown_task: asyncio.Task | None = None
+
+            def request_shutdown() -> None:
+                nonlocal shutdown_task
+                if shutdown_task is None:
+                    shutdown_task = loop.create_task(
+                        _stop_bot_gracefully(bot, _node_bootstrap, NodePool),
+                        name='discord-graceful-shutdown',
+                    )
+
+            handlers = _install_shutdown_handlers(loop, request_shutdown)
+            try:
+                await bot.start(settings.token)
+            finally:
+                for sig in handlers:
+                    loop.remove_signal_handler(sig)
+                if shutdown_task is not None:
+                    # Ensure voice cleanup is finished before the bot context
+                    # manager exits. The signal task closes Discord last.
+                    await shutdown_task
+                else:
+                    # Also clean up on normal exit, exception or cancellation.
+                    await _node_bootstrap.close()
+                    await NodePool.close_all()
     finally:
-        await _node_bootstrap.close()
-        await NodePool.close_all()
         if lavalink_proc is not None:
             lavalink_proc.terminate()
 
