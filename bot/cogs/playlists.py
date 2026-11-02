@@ -53,9 +53,22 @@ class Playlists(commands.Cog):
         self.bot = bot
 
     @staticmethod
-    async def _send(ctx: commands.Context, message: str) -> None:
+    async def _send(ctx: commands.Context, message: str,
+                    *, private: bool = False) -> None:
+        """Keep private playlist listings out of public prefix-command channels."""
+        mentions = discord.AllowedMentions.none()
+        if private and ctx.interaction is None:
+            try:
+                await ctx.author.send(message, allowed_mentions=mentions)
+            except (discord.Forbidden, discord.HTTPException):
+                await ctx.send(
+                    '❌ Could not send your private playlist details by DM. '
+                    'Enable DMs or use slash commands.',
+                    allowed_mentions=mentions,
+                )
+            return
         await ctx.send(message, ephemeral=ctx.interaction is not None,
-                       allowed_mentions=discord.AllowedMentions.none())
+                       allowed_mentions=mentions)
 
     @commands.hybrid_group(
         name='playlist', description='Manage your saved music playlists',
@@ -89,7 +102,7 @@ class Playlists(commands.Cog):
         if not items:
             return await self._send(ctx, 'You have no saved playlists in this server.')
         lines = [f'• **{name}** — {count} tracks' for name, count in items]
-        await self._send(ctx, '🎶 Your saved playlists:\n' + '\n'.join(lines))
+        await self._send(ctx, '🎶 Your saved playlists:\n' + '\n'.join(lines), private=True)
 
     @playlist.command(name='load', description='Queue a previously saved playlist')
     async def load(self, ctx: commands.Context, *, name: str) -> None:
@@ -159,7 +172,7 @@ class Playlists(commands.Cog):
             return await self._send(ctx, f'❌ Page must be between 1 and {total_pages}.')
         first = (page - 1) * 10
         lines = [f'{first + i + 1}. <{url}>' for i, url in enumerate(urls[first:first + 10])]
-        await self._send(ctx, f'🎶 **{name}** (page {page}/{total_pages})\n' + '\n'.join(lines))
+        await self._send(ctx, f'🎶 **{name}** (page {page}/{total_pages})\n' + '\n'.join(lines), private=True)
 
     @playlist.command(name='rename', description='Rename one of your saved playlists')
     async def rename(self, ctx: commands.Context, old_name: str,
