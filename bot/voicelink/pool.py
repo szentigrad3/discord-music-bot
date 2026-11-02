@@ -90,7 +90,8 @@ class Node:
         )
         self._rest_uri: str = f"{'https' if self._secure else 'http'}://{self._host}:{self._port}"
 
-        self._session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+        self._owns_session = session is None
+        self._session: aiohttp.ClientSession = session if session is not None else aiohttp.ClientSession()
         self._websocket: aiohttp.ClientWebSocketResponse = None
         self._task: asyncio.Task = None
 
@@ -446,6 +447,34 @@ class NodePool:
 
         nodes = {node: len(node.players.keys()) for node in available_nodes}
         return min(nodes, key=nodes.get)
+
+    @classmethod
+    async def close_all(cls) -> None:
+        """Close registered nodes and owned HTTP sessions on bot shutdown.
+
+        This does not dispose of caller-owned aiohttp sessions. Each node is
+        removed from the pool even if voice teardown fails.
+        """
+        for identifier, node in list(cls._nodes.items()):
+            try:
+                await node.disconnect(remove_from_pool=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.getLogger("voicelink").exception(
+                    "Failed to disconnect node %s during shutdown", identifier
+                )
+            finally:
+                cls._nodes.pop(identifier, None)
+                owned = getattr(node, "_owns_session", False)
+                session = getattr(node, "_session", None)
+                if owned and session is not None and not session.closed:
+                    try:
+                        await session.close()
+                    except Exception:
+                        logging.getLogger("voicelink").exception(
+                            "Failed to close HTTP session for node %s", identifier
+                        )
 
     @classmethod
     async def create_node(
