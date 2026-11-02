@@ -11,6 +11,7 @@ import discord
 from bot.voicelink import NodePool
 from discord.ext import commands
 
+from bot.command_sync import CommandTreeSync
 from bot.db import get_guild_settings, init_db
 from bot.logger import get_logger, setup_logging
 from bot.settings import settings
@@ -43,6 +44,7 @@ def create_bot() -> commands.Bot:
 
 
 bot = create_bot()
+_command_sync = CommandTreeSync()
 
 
 @bot.event
@@ -55,11 +57,9 @@ async def on_ready() -> None:
             name='🎵 Music | /play',
         )
     )
-    try:
-        synced = await bot.tree.sync()
-        logger.info('Synced %d application (/) commands.', len(synced))
-    except Exception as e:
-        logger.error('Failed to sync commands: %s', e)
+    # Discord can dispatch on_ready again after reconnecting. Sync only once
+    # per process, retrying on a later ready event if the first sync fails.
+    await _command_sync.sync(bot.tree, logger)
 
     # Connect to Lavalink via voicelink (requires bot.user to be available)
     try:
