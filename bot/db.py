@@ -65,8 +65,9 @@ async def get_guild_settings(guild_id: str) -> dict:
             return dict(row)
 
         # Create default settings
+        # Two slash commands can initialize a new guild simultaneously.
         await db.execute(
-            'INSERT INTO GuildSettings (guildId) VALUES (?)', (guild_id,)
+            'INSERT OR IGNORE INTO GuildSettings (guildId) VALUES (?)', (guild_id,)
         )
         await db.commit()
         async with db.execute(
