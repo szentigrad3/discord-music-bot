@@ -28,6 +28,11 @@ MANAGE_GUILD = 0x20
 
 app = Flask(__name__)
 app.secret_key = settings.session_secret
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=settings.callback_url.startswith('https://'),
+)
 
 
 # ------------------------------------------------------------------ helpers
@@ -84,7 +89,7 @@ def auth_discord():
 def auth_discord_callback():
     state = request.args.get('state')
     stored_state = session.pop('oauth_state', None)
-    if not state or state != stored_state:
+    if not state or not stored_state or not secrets.compare_digest(state, stored_state):
         return redirect(url_for('index'))
 
     code = request.args.get('code')
@@ -111,9 +116,15 @@ def auth_discord_callback():
         return redirect(url_for('index'))
 
     headers = {'Authorization': f'Bearer {access_token}'}
-    user = requests.get(f'{DISCORD_API}/users/@me', headers=headers, timeout=10).json()
+    user_resp = requests.get(f'{DISCORD_API}/users/@me', headers=headers, timeout=10)
     guilds_resp = requests.get(f'{DISCORD_API}/users/@me/guilds', headers=headers, timeout=10)
-    user['guilds'] = guilds_resp.json() if guilds_resp.ok else []
+    if not user_resp.ok or not guilds_resp.ok:
+        return redirect(url_for('index'))
+    user = user_resp.json()
+    guilds = guilds_resp.json()
+    if not isinstance(user, dict) or not isinstance(guilds, list):
+        return redirect(url_for('index'))
+    user['guilds'] = guilds
 
     session['user'] = user
     return redirect(url_for('dashboard'))
@@ -131,7 +142,7 @@ def dashboard():
     user = session['user']
     manageable = [
         g for g in (user.get('guilds') or [])
-        if (int(g.get('permissions', '0')) & MANAGE_GUILD) == MANAGE_GUILD
+        if _can_manage(g)
     ]
 
     bot_guild_ids: set[str] = set()
@@ -182,8 +193,13 @@ def guild_settings_post(guild_id: str):
     language = request.form.get('language', 'en')
     if language not in ('en', 'es'):
         language = 'en'
-    default_volume = max(1, min(100, int(request.form.get('defaultVolume') or 80)))
+    try:
+        default_volume = max(1, min(100, int(request.form.get('defaultVolume') or 80)))
+    except (ValueError, TypeError):
+        return 'Invalid volume', 400
     dj_role_id = request.form.get('djRoleId') or None
+    if dj_role_id is not None and (not dj_role_id.isascii() or not dj_role_id.isdecimal() or len(dj_role_id) > 20):
+        return 'Invalid role ID', 400
     announce = request.form.get('announceNowPlaying') == 'on'
 
     import asyncio
@@ -202,9 +218,17 @@ def guild_settings_post(guild_id: str):
 
 # ------------------------------------------------------------------ db helpers (sync wrappers)
 
+def _can_manage(guild: dict) -> bool:
+    try:
+        permissions = int(guild.get('permissions', '0'))
+        return bool(guild.get('owner')) or (permissions & MANAGE_GUILD) == MANAGE_GUILD
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def _has_access(user: dict, guild_id: str) -> bool:
     return any(
-        g['id'] == guild_id and (int(g.get('permissions', '0')) & MANAGE_GUILD) == MANAGE_GUILD
+        g.get('id') == guild_id and _can_manage(g)
         for g in (user.get('guilds') or [])
     )
 
