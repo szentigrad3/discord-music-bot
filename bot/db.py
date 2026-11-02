@@ -118,6 +118,8 @@ _PLAYLIST_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9 _-]{0,39}\Z')
 def _validated_name(name: str) -> tuple[str, str]:
     if not isinstance(name, str):
         raise ValueError('Playlist name must be text.')
+    if any(ord(char) < 32 or ord(char) == 127 for char in name):
+        raise ValueError('Playlist names cannot contain control characters.')
     name = ' '.join(name.strip().split())
     if not _PLAYLIST_NAME.fullmatch(name):
         raise ValueError('Playlist name must be 1–40 letters, digits, spaces, _ or -.')
