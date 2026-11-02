@@ -10,6 +10,7 @@ never modified. Secrets and databases are never printed or committed.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import json
 import os
 import shutil
@@ -128,8 +129,10 @@ def import_setup(source: Path, dest: Path, *, apply: bool = False) -> list[str]:
         dest_db = dest / 'data/bot.db'
         dest_db.parent.mkdir(parents=True, exist_ok=True)
         # SQLite backup API safely preserves the database including WAL state.
-        with sqlite3.connect(f'file:{db}?mode=ro', uri=True) as old:
-            with sqlite3.connect(dest_db) as new:
+        # sqlite3.Connection context managers manage transactions but do
+        # not close connections. Explicitly close both on Python 3.14+.
+        with closing(sqlite3.connect(f'file:{db}?mode=ro', uri=True)) as old:
+            with closing(sqlite3.connect(dest_db)) as new:
                 old.backup(new)
         dest_db.chmod(0o600)
 
