@@ -19,6 +19,11 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 - 🗄️ **SQLite** via aiosqlite
 - 🐳 **Docker** support
 
+> **Upgrading an existing v1.2.1 ZIP installation?** Follow the
+> [private settings and SQLite migration guide](docs/UPGRADE_FROM_1_2_1.md)
+> rather than replacing your `settings.json`, database or customized Lavalink
+> configuration. The importer preserves those files outside Git.
+
 ## Current development work (not released)
 
 The active maintenance pull request improves Discord reconnect handling,
