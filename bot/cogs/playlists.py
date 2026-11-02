@@ -22,7 +22,7 @@ from bot.db import (
 )
 from bot.logger import get_logger
 from bot.music.player import QueueFullError
-from bot.music.queue import get_or_create_player, resolve_tracks
+from bot.music.queue import VoiceChannelMismatchError, get_or_create_player, resolve_tracks
 
 logger = get_logger(__name__)
 
@@ -134,7 +134,7 @@ class Playlists(commands.Cog):
                 ctx.guild, voice_channel, ctx.channel, self.bot
             )
             await player.enqueue_many(tracks)
-        except QueueFullError as exc:
+        except (QueueFullError, VoiceChannelMismatchError) as exc:
             return await self._send(ctx, f'❌ {exc}')
         except Exception:
             logger.exception('Failed to load saved playlist')
