@@ -12,6 +12,7 @@ from bot.voicelink import NodePool
 from discord.ext import commands
 
 from bot.command_sync import CommandTreeSync
+from bot.lavalink_bootstrap import LavalinkBootstrap
 from bot.db import get_guild_settings, init_db
 from bot.logger import get_logger, setup_logging
 from bot.settings import settings
@@ -46,7 +47,18 @@ def create_bot() -> commands.Bot:
 
 bot = create_bot()
 _command_sync = CommandTreeSync()
+_node_bootstrap = LavalinkBootstrap()
 _empty_voice = EmptyVoiceManager()
+
+
+async def _connect_main_node() -> None:
+    await NodePool.create_node(
+        bot=bot,
+        host=settings.lavalink_host,
+        port=settings.lavalink_port,
+        password=settings.lavalink_password,
+        identifier='MAIN',
+    )
 
 
 @bot.event
@@ -63,19 +75,12 @@ async def on_ready() -> None:
     # per process, retrying on a later ready event if the first sync fails.
     await _command_sync.sync(bot.tree, logger)
 
-    # Connect to Lavalink via voicelink (requires bot.user to be available)
-    try:
-        if 'MAIN' not in NodePool._nodes:
-            node = await NodePool.create_node(
-                bot=bot,
-                host=settings.lavalink_host,
-                port=settings.lavalink_port,
-                password=settings.lavalink_password,
-                identifier='MAIN',
-            )
-            logger.info('Lavalink node connected.')
-    except Exception as e:
-        logger.error('Failed to connect to Lavalink node: %s', e)
+    # Do not block on_ready during a transient Lavalink outage. The
+    # bootstrapper retries initial creation; Voicelink owns reconnects after
+    # a node has been registered successfully.
+    _node_bootstrap.ensure(
+        _connect_main_node, lambda: 'MAIN' in NodePool._nodes, logger,
+    )
 
 
 @bot.event
@@ -267,6 +272,7 @@ async def main() -> None:
 
             await bot.start(settings.token)
     finally:
+        await _node_bootstrap.close()
         if lavalink_proc is not None:
             lavalink_proc.terminate()
 
