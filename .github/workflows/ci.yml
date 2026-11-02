@@ -28,6 +28,8 @@ jobs:
           python -m pip install -r requirements.txt pyyaml
       - name: Compile sources
         run: python -m compileall -q bot tests install.py update.py update_lavalink.py
+      - name: Validate AIO test runner syntax
+        run: bash -n scripts/test-all.sh
       - name: Run unit tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
 
