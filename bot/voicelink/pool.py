@@ -378,10 +378,12 @@ class Node:
                     # Keep cached data for diagnostics; do not discard the
                     # queue or destroy the user's Discord voice connection.
                     voice_state.clear()
+                    ready = getattr(player, "_voice_ready_event", None)
+                    if ready is not None:
+                        ready.clear()
                     await player._guild.change_voice_state(
                         channel=player.channel, self_deaf=True
                     )
-                    ready = getattr(player, "_voice_ready_event", None)
                     if ready is not None:
                         await asyncio.wait_for(ready.wait(), timeout=8)
                     else:
