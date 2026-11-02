@@ -91,8 +91,9 @@ class PlaybackTransitionTests(unittest.IsolatedAsyncioTestCase):
     async def test_many_unplayable_tracks_do_not_recurse(self):
         p = make_player()
         items = [track(str(n), encoded=False) for n in range(1100)]
+        p.tracks = items[1:]  # Deliberately exercise internal drain past public queue cap.
         with patch('bot.music.player.logger'):
-            await p.enqueue_many(items)
+            await p._play(items[0])
         self.assertIsNone(p.current)
         self.assertEqual(p.tracks, [])
         p._vl_player.disconnect.assert_awaited_once()
