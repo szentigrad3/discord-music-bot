@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from bot.music.player import QueueFullError
+
 if TYPE_CHECKING:
     from bot.music.track import Track
     from bot.music.player import MusicPlayer
@@ -34,7 +36,10 @@ class SearchSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         index = int(self.values[0])
         track = self._tracks[index]
-        await self.player.enqueue(track)
+        try:
+            await self.player.enqueue(track)
+        except QueueFullError as exc:
+            return await interaction.response.send_message(f'❌ {exc}', ephemeral=True)
         embed = discord.Embed(
             title='✅ Added to Queue',
             description=f'**[{track.title}]({track.url})**',
