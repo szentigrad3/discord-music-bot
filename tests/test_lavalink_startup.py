@@ -16,7 +16,14 @@ class NodeStartupTests(unittest.IsolatedAsyncioTestCase):
         node._headers = {'Authorization': 'secret'}
         node._heartbeat = 30
         node._bot = MagicMock()
-        node._bot.loop.create_task = MagicMock()
+
+        def capture_task(coroutine):
+            # No real event loop task is started in this test. Close the
+            # coroutine to avoid unawaited-coroutine warnings on Python 3.14.
+            coroutine.close()
+            return MagicMock()
+
+        node._bot.loop.create_task = MagicMock(side_effect=capture_task)
         node._session = MagicMock()
         node._session.ws_connect = AsyncMock()
         node._session.ws_connect.return_value.close = AsyncMock()
