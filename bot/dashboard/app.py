@@ -96,35 +96,41 @@ def auth_discord_callback():
     if not code:
         return redirect(url_for('index'))
 
-    token_resp = requests.post(
-        DISCORD_TOKEN_URL,
-        data={
-            'client_id': settings.client_id,
-            'client_secret': settings.client_secret,
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': _callback_url(),
-        },
-        timeout=10,
-    )
-    if not token_resp.ok:
-        return redirect(url_for('index'))
+    try:
+        token_resp = requests.post(
+            DISCORD_TOKEN_URL,
+            data={
+                'client_id': settings.client_id,
+                'client_secret': settings.client_secret,
+                'grant_type': 'authorization_code',
+                'code': code,
+                'redirect_uri': _callback_url(),
+            },
+            timeout=10,
+        )
+        if not token_resp.ok:
+            return redirect(url_for('index'))
+        token_data = token_resp.json()
+        if not isinstance(token_data, dict):
+            return redirect(url_for('index'))
+        access_token = token_data.get('access_token')
+        if not access_token:
+            return redirect(url_for('index'))
 
-    token_data = token_resp.json()
-    access_token = token_data.get('access_token')
-    if not access_token:
+        headers = {'Authorization': f'Bearer {access_token}'}
+        user_resp = requests.get(f'{DISCORD_API}/users/@me', headers=headers, timeout=10)
+        guilds_resp = requests.get(f'{DISCORD_API}/users/@me/guilds', headers=headers, timeout=10)
+        if not user_resp.ok or not guilds_resp.ok:
+            return redirect(url_for('index'))
+        user = user_resp.json()
+        guilds = guilds_resp.json()
+        if not isinstance(user, dict) or not isinstance(guilds, list):
+            return redirect(url_for('index'))
+        user['guilds'] = guilds
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        # Do not log the token, authorization code or Discord response body.
+        logger.warning('Discord OAuth callback failed: %s', type(exc).__name__)
         return redirect(url_for('index'))
-
-    headers = {'Authorization': f'Bearer {access_token}'}
-    user_resp = requests.get(f'{DISCORD_API}/users/@me', headers=headers, timeout=10)
-    guilds_resp = requests.get(f'{DISCORD_API}/users/@me/guilds', headers=headers, timeout=10)
-    if not user_resp.ok or not guilds_resp.ok:
-        return redirect(url_for('index'))
-    user = user_resp.json()
-    guilds = guilds_resp.json()
-    if not isinstance(user, dict) or not isinstance(guilds, list):
-        return redirect(url_for('index'))
-    user['guilds'] = guilds
 
     session['user'] = user
     return redirect(url_for('dashboard'))
