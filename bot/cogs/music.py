@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from bot.db import get_guild_settings, update_guild_settings
 from bot.i18n import t
-from bot.music.player import FILTERS, MusicPlayer, RepeatMode
+from bot.music.player import FILTERS, MusicPlayer, QueueFullError, RepeatMode
 from bot.music.queue import get_or_create_player, resolve_tracks
 from bot.views import SearchView, build_now_playing_embed
 from bot.views.controller import get_filter_display_name
@@ -120,7 +120,10 @@ class Music(commands.Cog):
         player.volume = settings.get('defaultVolume', 80)
 
         if len(tracks) == 1:
-            await player.enqueue(tracks[0])
+            try:
+                await player.enqueue(tracks[0])
+            except QueueFullError as exc:
+                return await edit_reply(f'❌ {exc}')
             track = tracks[0]
             embed = discord.Embed(
                 title=t('play.added', lang),
@@ -132,7 +135,10 @@ class Music(commands.Cog):
                 embed.set_thumbnail(url=track.thumbnail)
             return await edit_reply(embeds=[embed])
         else:
-            await player.enqueue_many(tracks)
+            try:
+                await player.enqueue_many(tracks)
+            except QueueFullError as exc:
+                return await edit_reply(f'❌ {exc}')
             embed = discord.Embed(
                 title=t('play.addedPlaylist', lang),
                 description=t('play.addedPlaylistDesc', lang, {'count': len(tracks)}),
