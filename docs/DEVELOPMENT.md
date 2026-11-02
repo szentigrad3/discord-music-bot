@@ -36,3 +36,37 @@ tradeoffs and use explicitly controlled updates for production if possible.
 The Lavalink password example is a placeholder and should be replaced consistently
 in both the bot settings and Lavalink configuration before exposing a deployment.
 The dashboard should be behind TLS and authentication in production.
+
+## All-in-one test command
+
+From the repository root, with development dependencies installed:
+
+```bash
+bash scripts/test-all.sh
+```
+
+This performs Python compilation, the complete offline unit suite, and Docker
+Compose validation when Docker Compose v2 is installed. It does **not** connect
+to Discord, start Lavalink, play music or alter the live bot.
+
+## November 2026 reliability work
+
+- Discord slash commands sync once per successful process start, retrying after
+  transient failures on a subsequent ready event.
+- Simultaneous voice join requests for a guild share one connection attempt.
+- Empty-channel auto-leave is debounced and cancelled when a listener returns.
+- Playback events are checked against the active track; failures drain queued
+  entries iteratively to avoid recursion.
+- A guild may hold up to 500 *pending* tracks. The currently playing track is
+  not counted; additions that would exceed the limit fail atomically.
+- Spotify playlist searches resolve up to three matches at a time and retain
+  playlist order. Playlist loading remains limited to the first 50 entries.
+- Dashboard authentication/session input validation has regression coverage.
+- The GitHub tag-release workflow tests the tagged source before publication.
+
+### Remaining live-release gates
+
+Check playback sources and voice event ordering with a real Discord test guild
+and Lavalink node, including `finished`, `stopped`, `loadFailed` and
+`replaced` event reasons. Also verify the dashboard behind its intended
+HTTPS reverse proxy. Offline tests cannot prove source-provider availability.
