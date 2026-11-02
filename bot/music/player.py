@@ -114,12 +114,23 @@ class MusicPlayer:
                 try:
                     await self._vl_player.set_volume(self._volume)
                     await self._vl_player.play(vl_track)
-                    if self.filter != 'none':
-                        await self._apply_filters(self.filter)
                 except Exception:
                     logger.exception('[Player:%s] Failed to play "%s"',
                                      self.guild.id, track.title)
                 else:
+                    # Filter setup is optional: a rejected Lavalink filter
+                    # must not skip an otherwise successfully started song.
+                    if self.filter != 'none':
+                        try:
+                            await self._apply_filters(self.filter)
+                        except Exception:
+                            logger.warning('[Player:%s] Cannot apply audio filter; '
+                                           'continuing without it.', self.guild.id)
+                            self.filter = 'none'
+                            try:
+                                await self._vl_player.reset_filters()
+                            except Exception:
+                                pass
                     if self.text_channel:
                         try:
                             await self._send_or_update_controller()
@@ -281,17 +292,18 @@ class MusicPlayer:
             await self._disable_controller()
 
     async def set_volume(self, vol: int) -> None:
-        self.volume = vol
-        await self._vl_player.set_volume(self._volume)
+        target = max(1, min(100, vol))
+        await self._vl_player.set_volume(target)
+        self._volume = target
 
     async def set_filter(self, filter_name: str) -> bool:
         if filter_name not in FILTERS:
             return False
-        self.filter = filter_name
         if filter_name == 'none':
             await self._vl_player.reset_filters()
         else:
             await self._apply_filters(filter_name)
+        self.filter = filter_name
         return True
 
     def shuffle(self) -> None:
