@@ -714,9 +714,15 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        # Remove all tracks before the target position
-        player.tracks = player.tracks[position - 1:]
-        await player.skip()
+        # Transition under the player's lock so playback and other requests
+        # cannot consume a partially edited queue.
+        try:
+            await player.skip_to(position)
+        except IndexError:
+            msg = '❌ Queue changed; please check /queue and try again.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
 
         msg = f'⏭️ Skipping to position **{position}**.'
         if is_inter:
