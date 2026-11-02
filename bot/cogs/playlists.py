@@ -67,7 +67,7 @@ class Playlists(commands.Cog):
         player = self.bot.queues.get(str(ctx.guild.id))
         if player is None or (not player.current and not player.tracks):
             return await self._send(ctx, '❌ There is no music to save.')
-        snapshot = ([player.current] if player.current else []) + list(player.tracks)
+        snapshot = await player.snapshot_tracks()
         urls = [track.url for track in snapshot if track.url][:MAX_SAVED_TRACKS]
         try:
             await save_playlist(str(ctx.guild.id), str(ctx.author.id), name, urls)
