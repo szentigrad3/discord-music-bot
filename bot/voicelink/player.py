@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import time
 import logging
+import asyncio
 
 from typing import Any, Dict, List, Optional, Union
 
@@ -79,6 +80,7 @@ class Player(VoiceProtocol):
         self._last_update: int = 0
         self._ending_track: Optional[Track] = None
         self._voice_state: dict = {}
+        self._voice_ready_event = asyncio.Event()
 
         self._logger: Optional[logging.Logger] = self._node._logger
 
@@ -155,22 +157,29 @@ class Player(VoiceProtocol):
         self._is_connected = state.get("connected")
         self._last_position = state.get("position")
 
-    async def _dispatch_voice_update(self, voice_data: Dict[str, Any] = None) -> None:
+    async def _dispatch_voice_update(self, voice_data: Dict[str, Any] = None) -> bool:
+        """Send a complete Discord voice handshake to Lavalink.
+
+        Return True only when Lavalink accepted it. A node restart can reuse a
+        valid Discord voice token, but must send it to the *new* server session.
+        """
         if not self._node._session_id:
-            return
-        if not all(k in self._voice_state for k in ("sessionId", "channelId", "event")):
-            return
-        state = voice_data or self._voice_state
+            return False
+        state = voice_data if voice_data is not None else self._voice_state
+        if not all(k in state for k in ("sessionId", "channelId", "event")):
+            return False
+        if not isinstance(state['event'], dict):
+            return False
         endpoint = state['event'].get('endpoint')
         if not endpoint:
-            return
+            return False
         if "://" in endpoint:
             endpoint = endpoint.split("://", 1)[1]
         token = state['event'].get('token')
         session_id = state.get('sessionId')
         channel_id = state.get('channelId')
         if not token or not session_id or not channel_id:
-            return
+            return False
         data = {
             "token": str(token),
             "endpoint": str(endpoint),
@@ -180,7 +189,13 @@ class Player(VoiceProtocol):
         try:
             await self.send(method=RequestMethod.PATCH, data={"voice": data})
         except NodeException as e:
-            self._logger.warning(f"Failed to dispatch voice update for guild {self._guild.id}: {e}")
+            self._logger.warning("Failed to dispatch voice update for guild %s: %s",
+                                 self._guild.id, type(e).__name__)
+            return False
+        ready = getattr(self, '_voice_ready_event', None)
+        if ready is not None:
+            ready.set()
+        return True
 
     async def on_voice_server_update(self, data: dict) -> None:
         self._voice_state.update({"event": data})
@@ -233,6 +248,7 @@ class Player(VoiceProtocol):
         self_mute: bool = False,
     ) -> None:
         self._voice_state.clear()
+        self._voice_ready_event.clear()
         await self.guild.change_voice_state(channel=self.channel, self_deaf=self_deaf, self_mute=self_mute)
         self._node._players[self.guild.id] = self
         self._is_connected = True
