@@ -235,6 +235,12 @@ class MusicPlayer:
 
     def move_track(self, from_pos: int, to_pos: int) -> None:
         """Move a track from one queue position to another (1-based indices)."""
+        if not 1 <= from_pos <= len(self.tracks):
+            raise IndexError('Source queue position is out of range')
+        if not 1 <= to_pos <= len(self.tracks):
+            raise IndexError('Destination queue position is out of range')
+        if from_pos == to_pos:
+            return
         track = self.tracks.pop(from_pos - 1)
         self.tracks.insert(to_pos - 1, track)
 
