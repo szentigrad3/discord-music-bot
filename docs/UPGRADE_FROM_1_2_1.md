@@ -124,6 +124,55 @@ If the container still restarts, inspect the **next** startup exception with
 `docker compose logs --tail=100 lavalink`. Missing permissions on
 individual plugin files may require rerunning the ACL utility.
 
+## Restarting Lavalink while a song is playing
+
+A Lavalink server restart destroys its in-memory audio players unless the
+server can resume the same session. The bot may remain in Discord voice, but
+it must restore the Discord voice handshake and re-create the Lavalink-side
+player before it can produce audio again. The old implementation cleared the
+cached voice state and attempted a same-channel voice update, which Discord
+does not guarantee will emit a new voice-server token. Recovery errors could
+also disconnect the player and discard its queue.
+
+The development branch now waits for the **new Lavalink session ID**, resends
+the cached valid Discord voice handshake and restores the active track. If
+that token is rejected, it performs a guarded voice leave/rejoin without
+tearing down the music queue. Resumed Lavalink sessions are not replayed.
+An unrecoverable failure is logged instead of silently deleting the queue.
+The remote server restart necessarily interrupts audio briefly; this is not
+a promise of uninterrupted playback.
+
+First apply this change to the development installation (not the old backup):
+
+```bash
+cd ~/discord-music-bot-next
+git pull --ff-only
+bash scripts/test-all.sh
+docker compose up -d --build bot
+```
+
+Only after confirming that the updated bot has successfully connected and
+played a song should you run this controlled restart test:
+
+```bash
+docker compose restart lavalink
+docker compose ps
+docker compose logs --tail=100 bot
+```
+
+After Lavalink is healthy, check whether the current track resumes or a new
+`/play` works without restarting `bot`. The log message
+`Restored Lavalink voice/player for guild` indicates that the recovery
+routine completed, **not** that audible playback was independently verified.
+To collect a short sanitized diagnostic log if audio remains silent, use:
+
+```bash
+docker compose logs --tail=150 bot | grep -Ei 'voice|node|lavalink|recover|reconnect|exception|error'
+```
+
+Never post private `settings.json`, `.env`, access tokens or full URLs
+containing credentials.
+
 ## Configuration details
 
 - If `settings.json` uses `lavalink.host=localhost`, the bot already
