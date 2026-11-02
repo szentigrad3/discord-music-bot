@@ -35,8 +35,8 @@ services:
     environment:
       - _JAVA_OPTIONS=-Xmx1G --enable-native-access=ALL-UNNAMED
       - SERVER_PORT=2333
-      - LAVALINK_SERVER_PASSWORD=youshallnotpass
-      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
+      - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD:-youshallnotpass}
+      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/${LAVALINK_CONFIG_FILE:-application.docker.yml}
       # Disables Spring Cloud Config Server discovery entirely.
       # Without this, Lavalink attempts to contact http://localhost:8888 three times at
       # startup and logs "Connection refused" warnings even though the server does not exist.
@@ -61,13 +61,18 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    # Allow the SIGTERM handler to leave Discord voice before Docker sends
+    # SIGKILL. The default 10 seconds is too short for several guilds.
+    stop_grace_period: 45s
     environment:
       - BOT_IN_DOCKER=true
     volumes:
       - ./data:/app/data
       - ./settings.json:/app/settings.json
     ports:
-      - "${DASHBOARD_PORT:-3000}:3000"
+      # Bind the dashboard to loopback by default; publish through a TLS reverse proxy.
+      # Set DASHBOARD_BIND_HOST=0.0.0.0 only when intentionally exposing the port.
+      - "${DASHBOARD_BIND_HOST:-127.0.0.1}:${DASHBOARD_PORT:-3000}:3000"
     depends_on:
       lavalink:
         condition: service_healthy

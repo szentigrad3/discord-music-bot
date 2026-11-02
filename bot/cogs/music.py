@@ -8,8 +8,8 @@ from discord.ext import commands
 
 from bot.db import get_guild_settings, update_guild_settings
 from bot.i18n import t
-from bot.music.player import FILTERS, MusicPlayer, RepeatMode
-from bot.music.queue import get_or_create_player, resolve_tracks
+from bot.music.player import FILTERS, MusicPlayer, QueueFullError, RepeatMode
+from bot.music.queue import VoiceChannelMismatchError, get_or_create_player, resolve_tracks
 from bot.views import SearchView, build_now_playing_embed
 from bot.views.controller import get_filter_display_name
 
@@ -116,11 +116,17 @@ class Music(commands.Cog):
         if not tracks:
             return await edit_reply(t('errors.noResults', lang))
 
-        player = await get_or_create_player(guild, voice_channel, text_channel, self.bot)
+        try:
+            player = await get_or_create_player(guild, voice_channel, text_channel, self.bot)
+        except VoiceChannelMismatchError as exc:
+            return await edit_reply(f'❌ {exc}')
         player.volume = settings.get('defaultVolume', 80)
 
         if len(tracks) == 1:
-            await player.enqueue(tracks[0])
+            try:
+                await player.enqueue(tracks[0])
+            except QueueFullError as exc:
+                return await edit_reply(f'❌ {exc}')
             track = tracks[0]
             embed = discord.Embed(
                 title=t('play.added', lang),
@@ -132,7 +138,10 @@ class Music(commands.Cog):
                 embed.set_thumbnail(url=track.thumbnail)
             return await edit_reply(embeds=[embed])
         else:
-            await player.enqueue_many(tracks)
+            try:
+                await player.enqueue_many(tracks)
+            except QueueFullError as exc:
+                return await edit_reply(f'❌ {exc}')
             embed = discord.Embed(
                 title=t('play.addedPlaylist', lang),
                 description=t('play.addedPlaylistDesc', lang, {'count': len(tracks)}),
@@ -662,7 +671,10 @@ class Music(commands.Cog):
 
         vl_tracks = results.tracks if isinstance(results, VoicelinkPlaylist) else results
         tracks = [Track.from_voicelink(r, str(member)) for r in vl_tracks[:MAX_SEARCH_RESULTS]]
-        player = await get_or_create_player(guild, voice_channel, ctx.channel, self.bot)
+        try:
+            player = await get_or_create_player(guild, voice_channel, ctx.channel, self.bot)
+        except VoiceChannelMismatchError as exc:
+            return await edit_reply(f'❌ {exc}')
         settings = await get_guild_settings(str(guild.id))
         player.volume = settings.get('defaultVolume', 80)
 
@@ -708,9 +720,15 @@ class Music(commands.Cog):
                 return await ctx.response.send_message(msg, ephemeral=True)
             return await ctx.reply(msg)
 
-        # Remove all tracks before the target position
-        player.tracks = player.tracks[position - 1:]
-        await player.skip()
+        # Transition under the player's lock so playback and other requests
+        # cannot consume a partially edited queue.
+        try:
+            await player.skip_to(position)
+        except IndexError:
+            msg = '❌ Queue changed; please check /queue and try again.'
+            if is_inter:
+                return await ctx.response.send_message(msg, ephemeral=True)
+            return await ctx.reply(msg)
 
         msg = f'⏭️ Skipping to position **{position}**.'
         if is_inter:

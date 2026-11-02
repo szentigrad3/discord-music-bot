@@ -1,0 +1,22 @@
+# Prevent credentials, local databases and runtime state from entering the image
+.git
+.github
+.venv
+venv
+__pycache__
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+settings.json
+data
+logs
+lavalink/Lavalink.jar
+lavalink/plugins
+lavalink/*.log
+*.db
+*.db-*
+
+# Private Lavalink configs are mounted by Docker Compose, not baked into bot images.
+lavalink/application.local.yml
+lavalink/application.docker.local.yml

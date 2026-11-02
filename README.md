@@ -19,6 +19,78 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 - 🗄️ **SQLite** via aiosqlite
 - 🐳 **Docker** support
 
+> **Upgrading an existing v1.2.1 ZIP installation?** Follow the
+> [private settings and SQLite migration guide](docs/UPGRADE_FROM_1_2_1.md)
+> rather than replacing your `settings.json`, database or customized Lavalink
+> configuration. The importer preserves those files outside Git.
+
+## Stable v2.0.0 — BENDER overhaul (2 November 2026)
+
+This major release upgrades the earlier v1.2.1 music bot with resilient
+Lavalink restarts, clean Docker voice shutdown, saved playlists, queue/controller
+improvements, safer cross-channel access, and a documented private configuration
+migration path. Vocard's [beta branch](https://github.com/ChocoMeow/Vocard/tree/beta)
+was a reference for the music interface and architecture.
+
+[Release and migration notes](docs/RELEASE_v2.0.0.md) provide the verified
+features and safe upgrade commands. Discord OAuth dashboard support remains
+optional and **disabled** unless a session secret is configured; it was not
+part of the user's live release test.
+
+- Up to **500 waiting tracks** per server, with atomic queue-limit checks.
+- Failed and stale Lavalink track-end events cannot recursively drain/replay
+  the queue. Manual skip bypasses repeat-one.
+- Spotify playlist matches resolve in order with at most three concurrent
+  lookups; token and API requests use timeouts.
+- Debounced empty-channel auto-leave and protected concurrent voice joins.
+- Additional GitHub Actions tests and release-tag verification.
+
+**Local all-in-one checks** (install requirements plus `pyyaml` first):
+
+```bash
+bash scripts/test-all.sh
+```
+
+The runner validates Python sources, unit tests, and Docker Compose when it is
+available; it does not connect to Discord or replace live audio smoke tests.
+See [development instructions](docs/DEVELOPMENT.md) and
+[Vocard reference notes](docs/VOCARD_BETA_REFERENCE.md).
+
+## Saved playlists
+
+Your own playlist collection is stored persistently in the bot's SQLite
+database. Playlists are private to each user within each server, and cannot be
+edited or loaded by other users. Use either slash commands or prefix commands:
+
+| Slash | Prefix example | Purpose |
+|---|---|---|
+| `/playlist save` | `!playlist save Evening Mix` | Save the current track and waiting queue |
+| `/playlist list` | `!playlist list` | List your saved playlists (DM on prefix) |
+| `/playlist show` | `!playlist show "Evening Mix" 1` | View saved URLs by page (DM on prefix) |
+| `/playlist load` | `!playlist load Evening Mix` | Re-resolve and queue saved tracks |
+| `/playlist add` | `!playlist add Evening Mix` | Append the currently playing track |
+| `/playlist remove` | `!playlist remove "Evening Mix" 2` | Remove a saved track by position |
+| `/playlist rename` | `!playlist rename "Evening Mix" "Late Night"` | Rename without overwriting |
+| `/playlist delete` | `!playlist delete Evening Mix` | Remove your playlist |
+
+Each user can store up to 20 playlists per server with up to 50 tracks per
+playlist. Only the first 50 items of the playing + waiting queue are saved.
+Names support letters, digits, spaces, dashes and underscores (max 40 chars).
+Playlist tracks are stored as URLs, not temporary Lavalink encoded IDs.
+Unavailable tracks are skipped during loading; YouTube/Spotify availability
+depends on active Lavalink plugins and provider access.
+
+For prefix commands, names containing spaces in multi-argument commands need
+quotes. `/playlist list` and `/playlist show` are ephemeral; their prefix
+versions DM results to avoid exposing private names/URLs to other members.
+
+The Lavalink startup connection retries automatically after a temporary outage.
+You can run `python scripts/doctor.py` for a credential-safe offline configuration
+preflight and `python scripts/lavalink_smoke.py` for a read-only live Lavalink
+HTTP check. Neither performs an audible music test.
+
+**This is under review in PR #142, not part of the published v1.2.1 release.**
+
 ## Requirements
 
 | Requirement | Standalone (no Docker) | Docker |

@@ -2,18 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import threading
 import zipfile
 from pathlib import Path
+from typing import Callable
 
 import aiohttp
 import discord
 from bot.voicelink import NodePool
 from discord.ext import commands
 
+from bot.command_sync import CommandTreeSync
+from bot.lavalink_bootstrap import LavalinkBootstrap
 from bot.db import get_guild_settings, init_db
 from bot.logger import get_logger, setup_logging
 from bot.settings import settings
+from bot.voice_idle import EmptyVoiceManager
 
 logger = get_logger(__name__)
 
@@ -43,6 +48,19 @@ def create_bot() -> commands.Bot:
 
 
 bot = create_bot()
+_command_sync = CommandTreeSync()
+_node_bootstrap = LavalinkBootstrap()
+_empty_voice = EmptyVoiceManager()
+
+
+async def _connect_main_node() -> None:
+    await NodePool.create_node(
+        bot=bot,
+        host=settings.lavalink_host,
+        port=settings.lavalink_port,
+        password=settings.lavalink_password,
+        identifier='MAIN',
+    )
 
 
 @bot.event
@@ -55,25 +73,16 @@ async def on_ready() -> None:
             name='🎵 Music | /play',
         )
     )
-    try:
-        synced = await bot.tree.sync()
-        logger.info('Synced %d application (/) commands.', len(synced))
-    except Exception as e:
-        logger.error('Failed to sync commands: %s', e)
+    # Discord can dispatch on_ready again after reconnecting. Sync only once
+    # per process, retrying on a later ready event if the first sync fails.
+    await _command_sync.sync(bot.tree, logger)
 
-    # Connect to Lavalink via voicelink (requires bot.user to be available)
-    try:
-        if 'MAIN' not in NodePool._nodes:
-            node = await NodePool.create_node(
-                bot=bot,
-                host=settings.lavalink_host,
-                port=settings.lavalink_port,
-                password=settings.lavalink_password,
-                identifier='MAIN',
-            )
-            logger.info('Lavalink node connected.')
-    except Exception as e:
-        logger.error('Failed to connect to Lavalink node: %s', e)
+    # Do not block on_ready during a transient Lavalink outage. The
+    # bootstrapper retries initial creation; Voicelink owns reconnects after
+    # a node has been registered successfully.
+    _node_bootstrap.ensure(
+        _connect_main_node, lambda: 'MAIN' in NodePool._nodes, logger,
+    )
 
 
 @bot.event
@@ -81,11 +90,28 @@ async def on_voicelink_track_end(player, track, reason: str) -> None:
     music_player = getattr(player, '_music_player', None)
     if music_player is None:
         return
-    # Only advance the queue for "normal" end reasons (finished, loadFailed, etc.)
-    # Reason 'replaced' means a new track was explicitly started, so skip
-    if reason == 'replaced':
+    # Manual STOPPED transitions are performed by skip/back/skipto under
+    # the queue lock. Acting on the subsequent node event would advance twice.
+    if str(reason).lower() in ('replaced', 'stopped'):
         return
-    await music_player._on_track_end()
+    await music_player._on_track_end(reason=reason, ended_track=track)
+
+
+@bot.event
+async def on_voicelink_track_stuck(player, track, threshold: float) -> None:
+    music_player = getattr(player, '_music_player', None)
+    if music_player is not None:
+        logger.warning('Lavalink track stuck after %s ms', threshold)
+        await music_player._on_track_end(reason='loadFailed', ended_track=track)
+
+
+@bot.event
+async def on_voicelink_track_exception(player, track, exception: dict) -> None:
+    music_player = getattr(player, '_music_player', None)
+    if music_player is not None:
+        logger.warning('Lavalink track exception: %s',
+                       exception.get('severity', 'unknown') if isinstance(exception, dict) else 'unknown')
+        await music_player._on_track_end(reason='loadFailed', ended_track=track)
 
 
 @bot.event
@@ -94,39 +120,12 @@ async def on_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
-    guild = member.guild
-    music_player = bot.queues.get(str(guild.id))
-    if not music_player:
+    guild_id = str(member.guild.id)
+    music_player = bot.queues.get(guild_id)
+    if music_player is None:
+        _empty_voice.cancel(guild_id)
         return
-
-    wl_player = music_player._vl_player
-    if not wl_player or not wl_player.is_connected:
-        return
-
-    bot_channel = wl_player.channel
-    if not bot_channel:
-        return
-
-    non_bots = [m for m in bot_channel.members if not m.bot]
-    if non_bots:
-        return
-
-    await asyncio.sleep(5)
-
-    # Re-check after the delay
-    if not wl_player.is_connected:
-        return
-    bot_channel = wl_player.channel
-    if not bot_channel:
-        return
-    non_bots = [m for m in bot_channel.members if not m.bot]
-    if non_bots:
-        return
-
-    await music_player.stop()
-    await wl_player.disconnect()
-    bot.queues.pop(str(guild.id), None)
-    logger.info('[voiceStateUpdate] Auto-left empty channel in guild %s', guild.id)
+    _empty_voice.update(guild_id, music_player, bot.queues.get)
 
 
 @bot.event
@@ -185,6 +184,12 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     logger.info('Starting Lavalink…')
     log_path = jar_path.parent / 'lavalink.log'
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
+    # A private local Lavalink config avoids embedding real passwords in
+    # tracked application.yml while preserving existing source/plugin tuning.
+    env = os.environ.copy()
+    local_config = jar_path.parent / 'application.local.yml'
+    if local_config.is_file():
+        env['SPRING_CONFIG_LOCATION'] = f'file:{local_config}'
     try:
         proc = await asyncio.create_subprocess_exec(
             'java', '--enable-native-access=ALL-UNNAMED', '-jar', str(jar_path),
@@ -192,6 +197,7 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
             stdin=asyncio.subprocess.DEVNULL,
             stdout=log_file,
             stderr=log_file,
+            env=env,
         )
     except FileNotFoundError:
         logger.warning('java not found, skipping Lavalink auto-start')
@@ -234,6 +240,51 @@ def _start_dashboard() -> None:
         logger.error('[dashboard] Failed to start: %s', exc)
 
 
+async def _stop_bot_gracefully(
+    discord_bot: commands.Bot,
+    bootstrap: LavalinkBootstrap,
+    nodes: type[NodePool],
+    *,
+    timeout: float = 25.0,
+) -> None:
+    """Leave Discord voice before closing the bot gateway on SIGTERM/SIGINT.
+
+    Docker sends SIGTERM to PID 1 when stopping or replacing the container.
+    Without a handler Python exits before its asyncio finally blocks run.
+    A bounded timeout leaves enough of the Docker stop grace period to close
+    the gateway even when a Lavalink operation is unresponsive.
+    """
+    logger.info('Shutdown requested: leaving Discord voice channels.')
+    try:
+        await bootstrap.close()
+        await asyncio.wait_for(nodes.close_all(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning('Voice shutdown exceeded %.1fs; closing Discord gateway.', timeout)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception('Voice shutdown encountered an error.')
+    finally:
+        await discord_bot.close()
+        logger.info('Discord bot shutdown complete.')
+
+
+def _install_shutdown_handlers(
+    loop: asyncio.AbstractEventLoop,
+    shutdown: Callable[[], None],
+) -> list[signal.Signals]:
+    """Use asyncio signal callbacks, not a synchronous signal exit."""
+    installed = []
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, shutdown)
+        except (NotImplementedError, RuntimeError):
+            # Windows event loops cannot register POSIX signal handlers.
+            continue
+        installed.append(sig)
+    return installed
+
+
 async def main() -> None:
     setup_logging(level=settings.log_level)
     await init_db()
@@ -273,7 +324,31 @@ async def main() -> None:
             if not settings.token:
                 raise RuntimeError('token is not set in settings.json')
 
-            await bot.start(settings.token)
+            loop = asyncio.get_running_loop()
+            shutdown_task: asyncio.Task | None = None
+
+            def request_shutdown() -> None:
+                nonlocal shutdown_task
+                if shutdown_task is None:
+                    shutdown_task = loop.create_task(
+                        _stop_bot_gracefully(bot, _node_bootstrap, NodePool),
+                        name='discord-graceful-shutdown',
+                    )
+
+            handlers = _install_shutdown_handlers(loop, request_shutdown)
+            try:
+                await bot.start(settings.token)
+            finally:
+                for sig in handlers:
+                    loop.remove_signal_handler(sig)
+                if shutdown_task is not None:
+                    # Ensure voice cleanup is finished before the bot context
+                    # manager exits. The signal task closes Discord last.
+                    await shutdown_task
+                else:
+                    # Also clean up on normal exit, exception or cancellation.
+                    await _node_bootstrap.close()
+                    await NodePool.close_all()
     finally:
         if lavalink_proc is not None:
             lavalink_proc.terminate()

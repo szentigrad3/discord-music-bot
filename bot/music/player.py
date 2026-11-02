@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import random
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,13 @@ FILTERS: dict[str, str | None] = {
     'karaoke': 'karaoke',
     'slowed': 'slowed',
 }
+
+
+MAX_PENDING_TRACKS = 500
+
+
+class QueueFullError(ValueError):
+    """Adding these tracks would exceed the per-guild queue limit."""
 
 
 class RepeatMode:
@@ -73,6 +81,8 @@ class MusicPlayer:
         self.filter: str = 'none'
         self.repeat_mode: int = RepeatMode.OFF
         self.paused: bool = False
+        # Serialize track-end transitions and stop/enqueue operations.
+        self._advance_lock = asyncio.Lock()
 
         # Interactive controller message (Vocard-style)
         self._controller_message: discord.Message | None = None
@@ -88,31 +98,53 @@ class MusicPlayer:
     # ------------------------------------------------------------------ playback
 
     async def _play(self, track: Track) -> None:
-        self.current = track
-        self.paused = False
+        """Start a track, skipping unplayable queued tracks without recursion.
 
-        vl_track = track._vl_track
-        if not vl_track:
-            logger.warning('[Player:%s] No voicelink track for "%s", skipping.', self.guild.id, track.title)
-            await self._on_track_end()
-            return
+        A playlist with many broken entries must not exhaust the call stack.
+        Repeat-one applies only to successfully completed tracks.
+        """
+        while True:
+            self.current = track
+            self.paused = False
+            vl_track = track._vl_track
+            if vl_track is None:
+                logger.warning('[Player:%s] Missing Lavalink track for "%s".',
+                               self.guild.id, track.title)
+            else:
+                try:
+                    await self._vl_player.set_volume(self._volume)
+                    await self._vl_player.play(vl_track)
+                except Exception:
+                    logger.exception('[Player:%s] Failed to play "%s"',
+                                     self.guild.id, track.title)
+                else:
+                    # Filter setup is optional: a rejected Lavalink filter
+                    # must not skip an otherwise successfully started song.
+                    if self.filter != 'none':
+                        try:
+                            await self._apply_filters(self.filter)
+                        except Exception:
+                            logger.warning('[Player:%s] Cannot apply audio filter; '
+                                           'continuing without it.', self.guild.id)
+                            self.filter = 'none'
+                            try:
+                                await self._vl_player.reset_filters()
+                            except Exception:
+                                pass
+                    if self.text_channel:
+                        try:
+                            await self._send_or_update_controller()
+                        except Exception:
+                            logger.exception('[Player:%s] Controller update failed',
+                                             self.guild.id)
+                    return
 
-        try:
-            await self._vl_player.set_volume(self._volume)
-            await self._vl_player.play(vl_track)
-            # Apply active filter
-            if self.filter != 'none':
-                await self._apply_filters(self.filter)
-        except Exception as e:
-            logger.error('[Player:%s] Failed to play "%s": %s', self.guild.id, track.title, e)
-            await self._on_track_end()
-            return
-
-        if self.text_channel:
-            try:
-                await self._send_or_update_controller()
-            except Exception:
-                pass
+            # Failed tracks do not enter the history or repeat loop.
+            self.current = None
+            if not self.tracks:
+                await self._cleanup()
+                return
+            track = self.tracks.pop(0)
 
     async def _apply_filters(self, filter_name: str) -> None:
         """Reset filters then apply the named filter set (fast-apply for instant effect)."""
@@ -139,60 +171,106 @@ class MusicPlayer:
         except Exception as e:
             logger.error('[Player:%s] Failed to send controller: %s', self.guild.id, e)
 
-    async def _on_track_end(self) -> None:
-        if self.repeat_mode == RepeatMode.ONE and self.current:
+    async def _on_track_end(self, *, reason: str = 'finished',
+                            ended_track=None) -> None:
+        """Handle node events, serialized with user actions and enqueue requests."""
+        async with self._advance_lock:
+            await self._advance_locked(reason=reason, ended_track=ended_track)
+
+    async def _advance_locked(self, *, reason: str,
+                              ended_track=None) -> None:
+        """Advance the queue while the caller holds _advance_lock."""
+        if self.current is None:
+            return
+        current_vl = self.current._vl_track
+        if ended_track is not None and current_vl is not ended_track:
+            # Late end event for a track already replaced locally.
+            return
+        reason = reason.lower()
+        if reason == 'replaced':
+            return
+        if reason == 'finished' and self.repeat_mode == RepeatMode.ONE:
             await self._play(self.current)
             return
 
-        if self.current:
-            self.history.append(self.current)
-            # Keep history bounded to last 20 tracks
+        previous = self.current
+        if reason not in ('loadfailed', 'cleanup'):
+            self.history.append(previous)
             if len(self.history) > 20:
-                self.history.pop(0)
+                del self.history[:-20]
 
-        if self.repeat_mode == RepeatMode.ALL and self.current:
-            self.tracks.append(self.current)
-
+        if (self.repeat_mode == RepeatMode.ALL
+                and reason not in ('loadfailed', 'cleanup')
+                and len(self.tracks) < MAX_PENDING_TRACKS):
+            self.tracks.append(previous)
         self.current = None
-
         if self.tracks:
-            next_track = self.tracks.pop(0)
-            await self._play(next_track)
+            await self._play(self.tracks.pop(0))
         else:
             await self._cleanup()
 
     # ------------------------------------------------------------------ queue ops
 
     async def enqueue(self, track: Track) -> None:
-        if not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current:
-            await self._play(track)
-        else:
-            self.tracks.append(track)
+        await self.enqueue_many([track])
 
     async def enqueue_many(self, tracks: list[Track]) -> None:
         if not tracks:
             return
-        if not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current:
-            first, *rest = tracks
-            self.tracks.extend(rest)
-            await self._play(first)
-        else:
-            self.tracks.extend(tracks)
+        async with self._advance_lock:
+            idle = not self._vl_player.is_playing and not self._vl_player.is_paused and not self.current
+            incoming_pending = len(tracks) - int(idle)
+            if len(self.tracks) + incoming_pending > MAX_PENDING_TRACKS:
+                raise QueueFullError(f'Queue is full (maximum {MAX_PENDING_TRACKS} waiting tracks).')
+            if idle:
+                first, *rest = tracks
+                self.tracks.extend(rest)
+                await self._play(first)
+            else:
+                self.tracks.extend(tracks)
+
+    async def snapshot_tracks(self) -> list[Track]:
+        """Take a consistent current+queue snapshot for saved playlists."""
+        async with self._advance_lock:
+            return ([self.current] if self.current else []) + list(self.tracks)
 
     # ------------------------------------------------------------------ controls
 
     async def skip(self) -> None:
-        await self._vl_player.stop()
+        """Skip immediately; do not rely on a STOPPED event from Lavalink."""
+        async with self._advance_lock:
+            if self.current is None:
+                return
+            ended_track = self.current._vl_track
+            await self._vl_player.stop()
+            await self._advance_locked(reason='stopped', ended_track=ended_track)
+
+    async def skip_to(self, position: int) -> None:
+        """Jump to a 1-based waiting track, atomically with the stop request."""
+        async with self._advance_lock:
+            if not 1 <= position <= len(self.tracks):
+                raise IndexError('Queue position out of range')
+            if self.current is not None:
+                ended_track = self.current._vl_track
+                await self._vl_player.stop()
+                self.tracks = self.tracks[position - 1:]
+                await self._advance_locked(reason='stopped', ended_track=ended_track)
+            else:
+                self.tracks = self.tracks[position - 1:]
+                await self._play(self.tracks.pop(0))
 
     async def back(self) -> None:
-        """Go back to the previous track in history."""
-        if not self.history:
-            return
-        prev = self.history.pop()
-        # Insert the previous track at the front of the queue so _on_track_end
-        # picks it up naturally after stop() fires the track-end event.
-        self.tracks.insert(0, prev)
-        await self._vl_player.stop()
+        """Play previous history entry without waiting for a node end event."""
+        async with self._advance_lock:
+            if not self.history:
+                return
+            if self.current is not None:
+                ended_track = self.current._vl_track
+                await self._vl_player.stop()
+                self.tracks.insert(0, self.history.pop())
+                await self._advance_locked(reason='stopped', ended_track=ended_track)
+            else:
+                await self._play(self.history.pop())
 
     async def pause(self) -> None:
         await self._vl_player.set_pause(True)
@@ -203,24 +281,29 @@ class MusicPlayer:
         self.paused = False
 
     async def stop(self) -> None:
-        self.tracks = []
-        self.repeat_mode = RepeatMode.OFF
-        self.current = None
-        await self._vl_player.stop()
-        await self._disable_controller()
+        async with self._advance_lock:
+            # Preserve the queue if Lavalink refuses the stop request.
+            # A subsequent retry should not lose every waiting track.
+            await self._vl_player.stop()
+            self.tracks = []
+            self.repeat_mode = RepeatMode.OFF
+            self.current = None
+            self.paused = False
+            await self._disable_controller()
 
     async def set_volume(self, vol: int) -> None:
-        self.volume = vol
-        await self._vl_player.set_volume(self._volume)
+        target = max(1, min(100, vol))
+        await self._vl_player.set_volume(target)
+        self._volume = target
 
     async def set_filter(self, filter_name: str) -> bool:
         if filter_name not in FILTERS:
             return False
-        self.filter = filter_name
         if filter_name == 'none':
             await self._vl_player.reset_filters()
         else:
             await self._apply_filters(filter_name)
+        self.filter = filter_name
         return True
 
     def shuffle(self) -> None:
@@ -235,6 +318,12 @@ class MusicPlayer:
 
     def move_track(self, from_pos: int, to_pos: int) -> None:
         """Move a track from one queue position to another (1-based indices)."""
+        if not 1 <= from_pos <= len(self.tracks):
+            raise IndexError('Source queue position is out of range')
+        if not 1 <= to_pos <= len(self.tracks):
+            raise IndexError('Destination queue position is out of range')
+        if from_pos == to_pos:
+            return
         track = self.tracks.pop(from_pos - 1)
         self.tracks.insert(to_pos - 1, track)
 

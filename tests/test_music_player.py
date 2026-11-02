@@ -117,7 +117,7 @@ class TestMusicPlayerSeek(unittest.TestCase):
     """Tests for MusicPlayer.seek()."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_seek_calls_vl_player_seek_with_milliseconds(self):
         """seek(seconds) should call the underlying player's seek() with seconds * 1000."""

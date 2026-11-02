@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
+from urllib.parse import urlsplit
 
 import aiosqlite
 
@@ -33,6 +36,19 @@ async def init_db() -> None:
             )
             """
         )
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS SavedPlaylists (
+                guildId TEXT NOT NULL,
+                userId TEXT NOT NULL,
+                nameKey TEXT NOT NULL,
+                displayName TEXT NOT NULL,
+                tracksJson TEXT NOT NULL,
+                updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guildId, userId, nameKey)
+            )
+            """
+        )
         await db.commit()
 
 
@@ -49,8 +65,9 @@ async def get_guild_settings(guild_id: str) -> dict:
             return dict(row)
 
         # Create default settings
+        # Two slash commands can initialize a new guild simultaneously.
         await db.execute(
-            'INSERT INTO GuildSettings (guildId) VALUES (?)', (guild_id,)
+            'INSERT OR IGNORE INTO GuildSettings (guildId) VALUES (?)', (guild_id,)
         )
         await db.commit()
         async with db.execute(
@@ -90,3 +107,195 @@ async def update_guild_settings(guild_id: str, data: dict) -> dict:
         ) as cursor:
             row = await cursor.fetchone()
         return dict(row)
+
+
+
+# Saved playlists are private to the requesting user within a guild.
+MAX_SAVED_PLAYLISTS = 20
+MAX_SAVED_TRACKS = 50
+_PLAYLIST_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9 _-]{0,39}\Z')
+
+
+def _validated_name(name: str) -> tuple[str, str]:
+    if not isinstance(name, str):
+        raise ValueError('Playlist name must be text.')
+    if any(ord(char) < 32 or ord(char) == 127 for char in name):
+        raise ValueError('Playlist names cannot contain control characters.')
+    name = ' '.join(name.strip().split())
+    if not _PLAYLIST_NAME.fullmatch(name):
+        raise ValueError('Playlist name must be 1–40 letters, digits, spaces, _ or -.')
+    return name, name.casefold()
+
+
+def _validated_urls(urls: list[str]) -> list[str]:
+    if not urls or len(urls) > MAX_SAVED_TRACKS:
+        raise ValueError(f'Playlist must have 1–{MAX_SAVED_TRACKS} tracks.')
+    cleaned = []
+    for url in urls:
+        if not isinstance(url, str) or len(url) > 2048:
+            raise ValueError('Invalid track URL in playlist.')
+        parsed = urlsplit(url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            raise ValueError('Playlist tracks require absolute http(s) URLs.')
+        cleaned.append(url)
+    return cleaned
+
+
+async def save_playlist(guild_id: str, user_id: str, name: str,
+                        urls: list[str]) -> None:
+    """Atomically save/replace a user's private, guild-scoped playlist."""
+    display, key = _validated_name(name)
+    checked = _validated_urls(urls)
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT COUNT(*) FROM SavedPlaylists WHERE guildId=? AND userId=?',
+            (guild_id, user_id),
+        ) as cur:
+            count = (await cur.fetchone())[0]
+        async with db.execute(
+            'SELECT 1 FROM SavedPlaylists WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        ) as cur:
+            existing = await cur.fetchone()
+        if not existing and count >= MAX_SAVED_PLAYLISTS:
+            raise ValueError(f'Maximum {MAX_SAVED_PLAYLISTS} saved playlists per user.')
+        await db.execute(
+            """
+            INSERT INTO SavedPlaylists (guildId, userId, nameKey, displayName, tracksJson)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(guildId, userId, nameKey) DO UPDATE SET
+                displayName=excluded.displayName,
+                tracksJson=excluded.tracksJson,
+                updatedAt=CURRENT_TIMESTAMP
+            """,
+            (guild_id, user_id, key, display, json.dumps(checked)),
+        )
+        await db.commit()
+
+
+async def get_saved_playlist(guild_id: str, user_id: str,
+                             name: str) -> list[str] | None:
+    _, key = _validated_name(name)
+    async with aiosqlite.connect(_get_db_path()) as db:
+        async with db.execute(
+            'SELECT tracksJson FROM SavedPlaylists '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return None
+    return _validated_urls(json.loads(row[0]))
+
+
+async def list_saved_playlists(guild_id: str, user_id: str) -> list[tuple[str, int]]:
+    async with aiosqlite.connect(_get_db_path()) as db:
+        async with db.execute(
+            'SELECT displayName, tracksJson FROM SavedPlaylists '
+            'WHERE guildId=? AND userId=? ORDER BY displayName COLLATE NOCASE',
+            (guild_id, user_id),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [(name, len(json.loads(raw))) for name, raw in rows]
+
+
+async def delete_saved_playlist(guild_id: str, user_id: str,
+                                name: str) -> bool:
+    _, key = _validated_name(name)
+    async with aiosqlite.connect(_get_db_path()) as db:
+        result = await db.execute(
+            'DELETE FROM SavedPlaylists WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        )
+        await db.commit()
+        return result.rowcount > 0
+
+
+async def rename_saved_playlist(guild_id: str, user_id: str,
+                                old_name: str, new_name: str) -> bool:
+    """Rename without overwriting another saved playlist."""
+    _, old_key = _validated_name(old_name)
+    display, new_key = _validated_name(new_name)
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT 1 FROM SavedPlaylists WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, old_key),
+        ) as cursor:
+            if await cursor.fetchone() is None:
+                return False
+        if old_key != new_key:
+            async with db.execute(
+                'SELECT 1 FROM SavedPlaylists WHERE guildId=? AND userId=? AND nameKey=?',
+                (guild_id, user_id, new_key),
+            ) as cursor:
+                if await cursor.fetchone() is not None:
+                    raise ValueError('You already have a playlist with that name.')
+        await db.execute(
+            'UPDATE SavedPlaylists SET nameKey=?, displayName=?, '
+            'updatedAt=CURRENT_TIMESTAMP '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (new_key, display, guild_id, user_id, old_key),
+        )
+        await db.commit()
+    return True
+
+
+async def append_saved_track(guild_id: str, user_id: str,
+                             name: str, url: str) -> int | None:
+    """Append a validated URL atomically; return count, or None when missing."""
+    _, key = _validated_name(name)
+    checked_url = _validated_urls([url])[0]
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT tracksJson FROM SavedPlaylists '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        urls = _validated_urls(json.loads(row[0]))
+        if len(urls) >= MAX_SAVED_TRACKS:
+            raise ValueError(f'Maximum {MAX_SAVED_TRACKS} tracks per saved playlist.')
+        urls.append(checked_url)
+        await db.execute(
+            'UPDATE SavedPlaylists SET tracksJson=?, updatedAt=CURRENT_TIMESTAMP '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (json.dumps(urls), guild_id, user_id, key),
+        )
+        await db.commit()
+        return len(urls)
+
+
+async def remove_saved_track(guild_id: str, user_id: str,
+                             name: str, position: int) -> int | None:
+    """Remove a 1-based track position, preserving non-empty playlists."""
+    _, key = _validated_name(name)
+    if not isinstance(position, int) or isinstance(position, bool) or position < 1:
+        raise ValueError('Track position must be 1 or greater.')
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT tracksJson FROM SavedPlaylists '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        urls = _validated_urls(json.loads(row[0]))
+        if position > len(urls):
+            raise ValueError(f'Track position must be between 1 and {len(urls)}.')
+        if len(urls) == 1:
+            raise ValueError('Cannot remove the last track; delete the playlist instead.')
+        del urls[position - 1]
+        await db.execute(
+            'UPDATE SavedPlaylists SET tracksJson=?, updatedAt=CURRENT_TIMESTAMP '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (json.dumps(urls), guild_id, user_id, key),
+        )
+        await db.commit()
+        return len(urls)

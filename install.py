@@ -569,7 +569,7 @@ class Installer:
       - ./settings.json:/app/settings.json
     command: ["python", "-m", "bot.dashboard.app"]
     ports:
-      - "{dashboard_port}:{dashboard_port}"
+      - "127.0.0.1:{dashboard_port}:{dashboard_port}"
 """ if enable_dashboard else ''
 
         content = (
@@ -583,7 +583,7 @@ class Installer:
             f"      - ./data:/app/data\n"
             f"      - ./settings.json:/app/settings.json\n"
             f"    ports:\n"
-            f"      - \"{dashboard_port}:{dashboard_port}\"\n"
+            f"      - \"127.0.0.1:{dashboard_port}:{dashboard_port}\"\n"
             f"{bot_depends}\n"
             f"{yt_cipher_service}"
             f"{lavalink_service}"

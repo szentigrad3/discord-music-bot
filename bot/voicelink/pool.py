@@ -90,12 +90,15 @@ class Node:
         )
         self._rest_uri: str = f"{'https' if self._secure else 'http'}://{self._host}:{self._port}"
 
-        self._session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+        self._owns_session = session is None
+        self._session: aiohttp.ClientSession = session if session is not None else aiohttp.ClientSession()
         self._websocket: aiohttp.ClientWebSocketResponse = None
         self._task: asyncio.Task = None
 
         self.resume_key: str = resume_key or str(os.urandom(8).hex())
         self._session_id: str = None
+        self._ready_event = asyncio.Event()
+        self._resumed = False
         self._available: bool = None
 
         self._headers: Dict[str, str] = {
@@ -192,6 +195,8 @@ class Node:
                     break
 
                 elif msg.type == aiohttp.WSMsgType.ERROR:
+                    # Otherwise the reconnect loop sees _available=True and exits.
+                    self._available = False
                     self._logger.error(f"WebSocket error for node [{self._identifier}]")
                     break
 
@@ -226,6 +231,9 @@ class Node:
 
         if op == "ready":
             self._session_id = data.get("sessionId")
+            self._resumed = bool(data.get("resumed", False))
+            if self._session_id:
+                self._ready_event.set()
 
         if op == "stats":
             self._stats = NodeStats(data)
@@ -249,7 +257,8 @@ class Node:
             method=method.value,
             url=uri,
             headers={"Authorization": self._password},
-            json=data
+            json=data,
+            timeout=aiohttp.ClientTimeout(total=20),
         ) as resp:
             if resp.status >= 300:
                 error_body = await resp.text()
@@ -268,14 +277,39 @@ class Node:
                 self._logger.info(f"Node [{self._identifier}] already connected.")
                 return self
 
+            # A restarted Lavalink process returns a *new* session ID.
+            # Never send player REST requests against the previous process's
+            # stale session. Wait for its WebSocket ready event before recovery.
+            self._session_id = None
+            self._resumed = False
+            self._ready_event = asyncio.Event()
             self._websocket = await self._session.ws_connect(
                 self._websocket_uri, headers=self._headers, heartbeat=self._heartbeat
             )
 
-            self._task = self._bot.loop.create_task(self._listen())
+            # Do not start the listener until the REST handshake is usable.
+            # A failed /info request must not leave an orphan listener or a
+            # node that reports available without having completed startup.
             self._available = True
-            self._info = NodeInfo(await self.send(RequestMethod.GET, query="info"))
-
+            try:
+                self._info = NodeInfo(await self.send(RequestMethod.GET, query="info"))
+            except Exception:
+                self._available = False
+                await self._websocket.close()
+                self._websocket = None
+                raise
+            self._task = self._bot.loop.create_task(self._listen())
+            if self.players:
+                try:
+                    await asyncio.wait_for(self._ready_event.wait(), timeout=12)
+                except asyncio.TimeoutError as exc:
+                    self._available = False
+                    await self._websocket.close()
+                    self._websocket = None
+                    self._task.cancel()
+                    raise NodeConnectionFailure(
+                        f"Node [{self._identifier}] did not send a ready session."
+                    ) from exc
             self._logger.info(f"Node [{self._identifier}] is connected!")
 
         except aiohttp.ClientConnectorError:
@@ -291,7 +325,7 @@ class Node:
                 f"The URI for node '{self._identifier}' is invalid."
             )
 
-        if self.players:
+        if self.players and not self._resumed:
             await self.reconnect()
 
         return self
@@ -309,31 +343,81 @@ class Node:
         self._logger.info(f"Node [{self._identifier}] is disconnected!")
 
     async def reconnect(self) -> None:
-        await asyncio.sleep(10)
-        for player in self.players.copy().values():
-            await asyncio.sleep(3)
+        """Recreate the server-side players after Lavalink loses its session.
+
+        Discord may not emit another voice-server event when a bot already in
+        the same channel requests the *same* channel. Clearing the last valid
+        Discord token/session and waiting for that event strands the bot in
+        voice with silent playback. Restore the cached Discord voice handshake
+        to the new Lavalink session first. Only request fresh voice state when
+        the cache is incomplete or refused by Lavalink.
+        """
+        if not self._session_id:
+            raise NodeNotAvailable("Lavalink session is not ready for recovery.")
+        for player in list(self.players.values()):
+            if not player.channel:
+                continue
             try:
-                if player.channel:
-                    # Clear stale voice state so the upcoming VOICE_STATE_UPDATE /
-                    # VOICE_SERVER_UPDATE pair is used exclusively, preventing a
-                    # mismatched old sessionId + new token that causes Lavalink 400.
-                    player._voice_state.clear()
-                    # Re-trigger Discord's VOICE_STATE_UPDATE + VOICE_SERVER_UPDATE
-                    # so fresh tokens/session IDs are obtained instead of reusing
-                    # potentially stale cached voice state that would cause 400 errors.
-                    await player._guild.change_voice_state(
-                        channel=player.channel, self_deaf=True
-                    )
-                if player.current:
+                original_track = player.current
+                original_position = player._last_position or 0
+                was_paused = player.is_paused
+                voice_state = player._voice_state
+                usable_voice = (
+                    voice_state.get("sessionId")
+                    and voice_state.get("channelId")
+                    and isinstance(voice_state.get("event"), dict)
+                    and voice_state["event"].get("token")
+                    and voice_state["event"].get("endpoint")
+                )
+                if usable_voice:
+                    restored = await player._dispatch_voice_update()
+                else:
+                    restored = False
+
+                if not restored:
+                    # Same-channel voice updates can be Discord no-ops.
+                    # Force a fresh voice handshake if the cached token is
+                    # missing/rejected. Suppress normal teardown *only* for
+                    # the deliberate leave/rejoin so the queue survives.
+                    ready = getattr(player, "_voice_ready_event", None)
+                    if ready is not None:
+                        ready.clear()
+                    channel = player.channel
+                    player._recovering_voice = True
+                    try:
+                        voice_state.clear()
+                        await player._guild.change_voice_state(channel=None)
+                        await player._guild.change_voice_state(
+                            channel=channel, self_deaf=True
+                        )
+                        if ready is not None:
+                            await asyncio.wait_for(ready.wait(), timeout=10)
+                        else:
+                            self._logger.warning(
+                                "Guild %s has no voice handshake confirmation.",
+                                player.guild.id,
+                            )
+                    finally:
+                        player._recovering_voice = False
+                if original_track:
                     await player.play(
-                        track=player.current,
-                        start=min(player._last_position, player.current.length)
+                        track=original_track,
+                        start=min(max(0, original_position), original_track.length),
                     )
-                    if player.is_paused:
+                    if was_paused:
                         await player.set_pause(True)
-            except Exception:
-                await player.teardown()
-            await asyncio.sleep(2)
+                self._logger.info("Restored Lavalink voice/player for guild %s.",
+                                  player.guild.id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Destructive teardown here used to delete music queues when
+                # the backend had a transient error. Preserve the guild's
+                # player and let later commands or the next retry recover it.
+                self._logger.warning(
+                    "Lavalink recovery postponed for guild %s (%s).",
+                    player.guild.id, type(exc).__name__,
+                )
 
     async def build_track(self, identifier: str, requester=None) -> Track:
         data = await self.send(RequestMethod.GET, f"decodetrack?encodedTrack={identifier}")
@@ -407,7 +491,11 @@ class NodePool:
 
     @classmethod
     def get_best_node(cls, *, algorithm: NodeAlgorithm) -> Node:
-        available_nodes = [node for node in cls._nodes.values() if node._available]
+        available_nodes = [
+            node for node in cls._nodes.values()
+            if node._available and node.is_connected
+            and getattr(node, '_session_id', None)
+        ]
 
         if not available_nodes:
             raise NoNodesAvailable("There are no nodes available.")
@@ -423,7 +511,11 @@ class NodePool:
     @classmethod
     def get_node(cls, *, identifier: str = None) -> Node:
         available_nodes = {
-            node for _, node in cls._nodes.items() if node.is_connected
+            node for _, node in cls._nodes.items()
+            # A newly connected websocket is not playable until Lavalink
+            # supplies a fresh sessionId in its ready frame.
+            if node._available and node.is_connected
+            and getattr(node, '_session_id', None)
         }
 
         if identifier:
@@ -434,6 +526,34 @@ class NodePool:
 
         nodes = {node: len(node.players.keys()) for node in available_nodes}
         return min(nodes, key=nodes.get)
+
+    @classmethod
+    async def close_all(cls) -> None:
+        """Close registered nodes and owned HTTP sessions on bot shutdown.
+
+        This does not dispose of caller-owned aiohttp sessions. Each node is
+        removed from the pool even if voice teardown fails.
+        """
+        for identifier, node in list(cls._nodes.items()):
+            try:
+                await node.disconnect(remove_from_pool=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.getLogger("voicelink").exception(
+                    "Failed to disconnect node %s during shutdown", identifier
+                )
+            finally:
+                cls._nodes.pop(identifier, None)
+                owned = getattr(node, "_owns_session", False)
+                session = getattr(node, "_session", None)
+                if owned and session is not None and not session.closed:
+                    try:
+                        await session.close()
+                    except Exception:
+                        logging.getLogger("voicelink").exception(
+                            "Failed to close HTTP session for node %s", identifier
+                        )
 
     @classmethod
     async def create_node(
@@ -464,6 +584,13 @@ class NodePool:
             logger=logger
         )
 
-        await node.connect()
+        try:
+            await node.connect()
+        except Exception:
+            # Close sessions created here on a failed initial connection.
+            # An externally provided session belongs to its caller.
+            if session is None:
+                await node._session.close()
+            raise
         cls._nodes[node._identifier] = node
         return node
