@@ -273,6 +273,7 @@ async def main() -> None:
             await bot.start(settings.token)
     finally:
         await _node_bootstrap.close()
+        await NodePool.close_all()
         if lavalink_proc is not None:
             lavalink_proc.terminate()
 
