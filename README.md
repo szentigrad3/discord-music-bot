@@ -46,6 +46,28 @@ available; it does not connect to Discord or replace live audio smoke tests.
 See [development instructions](docs/DEVELOPMENT.md) and
 [Vocard reference notes](docs/VOCARD_BETA_REFERENCE.md).
 
+## Saved playlists (development branch)
+
+Your own playlist collection is stored persistently in the bot's SQLite
+database. Playlists are private to each user within each server, and cannot be
+edited or loaded by other users. Use either slash commands or prefix commands:
+
+| Slash | Prefix example | Purpose |
+|---|---|---|
+| `/playlist save` | `!playlist save Evening Mix` | Save the current track and waiting queue |
+| `/playlist list` | `!playlist list` | List your saved playlists |
+| `/playlist load` | `!playlist load Evening Mix` | Re-resolve and queue saved tracks |
+| `/playlist delete` | `!playlist delete Evening Mix` | Remove your playlist |
+
+Each user can store up to 20 playlists per server with up to 50 tracks per
+playlist. Only the first 50 items of the playing + waiting queue are saved.
+Names support letters, digits, spaces, dashes and underscores (max 40 chars).
+Playlist tracks are stored as URLs, not temporary Lavalink encoded IDs.
+Unavailable tracks are skipped during loading; YouTube/Spotify availability
+depends on active Lavalink plugins and provider access.
+
+**This is under review in PR #142, not part of the published v1.2.1 release.**
+
 ## Requirements
 
 | Requirement | Standalone (no Docker) | Docker |
