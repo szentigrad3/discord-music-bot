@@ -38,11 +38,8 @@ they invoke the Python virtual environment directly:
 cd ~/discord-music-bot-next
 git pull --ff-only
 
-# Verify the real existing setup (this command shows filenames, not secrets).
-test -f /mnt/other/JASON/JASON/backup/discord-music-bot/settings.json || {
-  echo "Missing original settings.json in backup directory"
-  exit 1
-}
+# Verify the real existing setup (this shows only the filename).
+ls /mnt/other/JASON/JASON/backup/discord-music-bot/settings.json
 
 # Safe preview: no files are copied.
 python3 scripts/import_existing_v121.py \
