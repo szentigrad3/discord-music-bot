@@ -15,6 +15,7 @@ from bot.command_sync import CommandTreeSync
 from bot.db import get_guild_settings, init_db
 from bot.logger import get_logger, setup_logging
 from bot.settings import settings
+from bot.voice_idle import EmptyVoiceManager
 
 logger = get_logger(__name__)
 
@@ -45,6 +46,7 @@ def create_bot() -> commands.Bot:
 
 bot = create_bot()
 _command_sync = CommandTreeSync()
+_empty_voice = EmptyVoiceManager()
 
 
 @bot.event
@@ -94,39 +96,12 @@ async def on_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
-    guild = member.guild
-    music_player = bot.queues.get(str(guild.id))
-    if not music_player:
+    guild_id = str(member.guild.id)
+    music_player = bot.queues.get(guild_id)
+    if music_player is None:
+        _empty_voice.cancel(guild_id)
         return
-
-    wl_player = music_player._vl_player
-    if not wl_player or not wl_player.is_connected:
-        return
-
-    bot_channel = wl_player.channel
-    if not bot_channel:
-        return
-
-    non_bots = [m for m in bot_channel.members if not m.bot]
-    if non_bots:
-        return
-
-    await asyncio.sleep(5)
-
-    # Re-check after the delay
-    if not wl_player.is_connected:
-        return
-    bot_channel = wl_player.channel
-    if not bot_channel:
-        return
-    non_bots = [m for m in bot_channel.members if not m.bot]
-    if non_bots:
-        return
-
-    await music_player.stop()
-    await wl_player.disconnect()
-    bot.queues.pop(str(guild.id), None)
-    logger.info('[voiceStateUpdate] Auto-left empty channel in guild %s', guild.id)
+    _empty_voice.update(guild_id, music_player, bot.queues.get)
 
 
 @bot.event
