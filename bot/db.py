@@ -210,3 +210,92 @@ async def delete_saved_playlist(guild_id: str, user_id: str,
         )
         await db.commit()
         return result.rowcount > 0
+
+
+async def rename_saved_playlist(guild_id: str, user_id: str,
+                                old_name: str, new_name: str) -> bool:
+    """Rename without overwriting another saved playlist."""
+    _, old_key = _validated_name(old_name)
+    display, new_key = _validated_name(new_name)
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT 1 FROM SavedPlaylists WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, old_key),
+        ) as cursor:
+            if await cursor.fetchone() is None:
+                return False
+        if old_key != new_key:
+            async with db.execute(
+                'SELECT 1 FROM SavedPlaylists WHERE guildId=? AND userId=? AND nameKey=?',
+                (guild_id, user_id, new_key),
+            ) as cursor:
+                if await cursor.fetchone() is not None:
+                    raise ValueError('You already have a playlist with that name.')
+        await db.execute(
+            'UPDATE SavedPlaylists SET nameKey=?, displayName=?, '
+            'updatedAt=CURRENT_TIMESTAMP '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (new_key, display, guild_id, user_id, old_key),
+        )
+        await db.commit()
+    return True
+
+
+async def append_saved_track(guild_id: str, user_id: str,
+                             name: str, url: str) -> int | None:
+    """Append a validated URL atomically; return count, or None when missing."""
+    _, key = _validated_name(name)
+    checked_url = _validated_urls([url])[0]
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT tracksJson FROM SavedPlaylists '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        urls = _validated_urls(json.loads(row[0]))
+        if len(urls) >= MAX_SAVED_TRACKS:
+            raise ValueError(f'Maximum {MAX_SAVED_TRACKS} tracks per saved playlist.')
+        urls.append(checked_url)
+        await db.execute(
+            'UPDATE SavedPlaylists SET tracksJson=?, updatedAt=CURRENT_TIMESTAMP '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (json.dumps(urls), guild_id, user_id, key),
+        )
+        await db.commit()
+        return len(urls)
+
+
+async def remove_saved_track(guild_id: str, user_id: str,
+                             name: str, position: int) -> int | None:
+    """Remove a 1-based track position, preserving non-empty playlists."""
+    _, key = _validated_name(name)
+    if not isinstance(position, int) or isinstance(position, bool) or position < 1:
+        raise ValueError('Track position must be 1 or greater.')
+    async with aiosqlite.connect(_get_db_path(), timeout=15) as db:
+        await db.execute('BEGIN IMMEDIATE')
+        async with db.execute(
+            'SELECT tracksJson FROM SavedPlaylists '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (guild_id, user_id, key),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        urls = _validated_urls(json.loads(row[0]))
+        if position > len(urls):
+            raise ValueError(f'Track position must be between 1 and {len(urls)}.')
+        if len(urls) == 1:
+            raise ValueError('Cannot remove the last track; delete the playlist instead.')
+        del urls[position - 1]
+        await db.execute(
+            'UPDATE SavedPlaylists SET tracksJson=?, updatedAt=CURRENT_TIMESTAMP '
+            'WHERE guildId=? AND userId=? AND nameKey=?',
+            (json.dumps(urls), guild_id, user_id, key),
+        )
+        await db.commit()
+        return len(urls)
