@@ -20,38 +20,57 @@ source code. Old and new versions must use separate directories.
 Tracked upstream Lavalink files remain unmodified. Passwords are never
 printed; do not commit local configuration, database or `.env` files.
 
-## CachyOS/Linux upgrade
+## CachyOS/Linux upgrade (tested path from your backup)
 
-First shut down the **old** bot and old Lavalink instance/container. Never
-run two bots using the same Discord token concurrently.
+Your archive was extracted while you were in
+`/mnt/other/JASON/JASON/backup/`, so its original installation directory is
+`/mnt/other/JASON/JASON/backup/discord-music-bot/`. Do **not** use
+`~/Downloads/discord-music-bot` unless you extracted a different copy there.
+
+**Stop the old bot and Lavalink before importing an actively used database.**
+Do not run two bot processes with the same Discord token.
+
+The new checkout already exists in `~/discord-music-bot-next`; you do not
+need to clone or unzip again. These commands work in Bash **and** fish because
+they invoke the Python virtual environment directly:
 
 ```bash
-cd ~/Downloads
-unzip -o discord-music-bot.zip
-
-git clone --branch maintenance/discord-reconnect-sync-2026 \
-  https://github.com/szentigrad3/discord-music-bot.git \
-  ~/discord-music-bot-next
-
 cd ~/discord-music-bot-next
+git pull --ff-only
 
-# Safe preview: does not change either directory.
+# Verify the real existing setup (this command shows filenames, not secrets).
+test -f /mnt/other/JASON/JASON/backup/discord-music-bot/settings.json || {
+  echo "Missing original settings.json in backup directory"
+  exit 1
+}
+
+# Safe preview: no files are copied.
 python3 scripts/import_existing_v121.py \
-  --old ~/Downloads/discord-music-bot
+  --old /mnt/other/JASON/JASON/backup/discord-music-bot
 
-# Copy private configuration and database to the new checkout.
+# Only after checking the preview, copy existing private settings/database.
 python3 scripts/import_existing_v121.py \
-  --old ~/Downloads/discord-music-bot --apply
+  --old /mnt/other/JASON/JASON/backup/discord-music-bot --apply
 
+# No activate.fish/source required (and no system-wide pip writes).
 python3 -m venv .venv
-# CachyOS fish shell:
-source .venv/bin/activate.fish
-# Bash/Zsh alternative: source .venv/bin/activate
-python -m pip install -r requirements.txt pyyaml
+.venv/bin/python -m pip install -r requirements.txt pyyaml
 
-python scripts/doctor.py
+.venv/bin/python scripts/doctor.py
 bash scripts/test-all.sh
 ```
+
+The importer is conservative. If an earlier test run generated
+`settings.json` byte-for-byte from `settings Example.json`, it backs up
+that generated sample and imports the real settings instead. If the destination
+contains a *customized* settings file, the importer refuses to overwrite it.
+Never delete an existing config or database merely to make the importer run.
+
+The AIO test runner now uses `.venv/bin/python` automatically, validates
+dependencies before loading bot modules and stops without running the suite
+if the imported settings file is missing. Python 3.13 is the tested CI
+version; your system Python may be 3.14, which requires installing compatible
+packages within the new virtual environment.
 
 For Docker use `docker compose config --quiet` before
 `docker compose up -d --build`; note this will start/replace services in
@@ -82,8 +101,8 @@ branch to production until live playback and dashboard verification pass.
 
 ## Troubleshooting
 
-Use `python scripts/doctor.py` without publishing your config.
-Use `python scripts/lavalink_smoke.py` to check REST connectivity.
+Use `.venv/bin/python scripts/doctor.py` without publishing your config.
+Use `.venv/bin/python scripts/lavalink_smoke.py` to check REST connectivity.
 The last is an authenticated read-only API check, **not** an audible
 Discord voice test.
 
