@@ -36,3 +36,6 @@ lavalink/*.jar
 # Private Lavalink configs imported from existing installations
 lavalink/application.local.yml
 lavalink/application.docker.local.yml
+
+# Backup of the auto-created sample during private migration
+settings.json.generated-template.backup
