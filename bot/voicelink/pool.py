@@ -375,22 +375,30 @@ class Node:
                     restored = False
 
                 if not restored:
-                    # Keep cached data for diagnostics; do not discard the
-                    # queue or destroy the user's Discord voice connection.
-                    voice_state.clear()
+                    # Same-channel voice updates can be Discord no-ops.
+                    # Force a fresh voice handshake if the cached token is
+                    # missing/rejected. Suppress normal teardown *only* for
+                    # the deliberate leave/rejoin so the queue survives.
                     ready = getattr(player, "_voice_ready_event", None)
                     if ready is not None:
                         ready.clear()
-                    await player._guild.change_voice_state(
-                        channel=player.channel, self_deaf=True
-                    )
-                    if ready is not None:
-                        await asyncio.wait_for(ready.wait(), timeout=8)
-                    else:
-                        self._logger.warning(
-                            "Guild %s has no voice handshake confirmation.",
-                            player.guild.id,
+                    channel = player.channel
+                    player._recovering_voice = True
+                    try:
+                        voice_state.clear()
+                        await player._guild.change_voice_state(channel=None)
+                        await player._guild.change_voice_state(
+                            channel=channel, self_deaf=True
                         )
+                        if ready is not None:
+                            await asyncio.wait_for(ready.wait(), timeout=10)
+                        else:
+                            self._logger.warning(
+                                "Guild %s has no voice handshake confirmation.",
+                                player.guild.id,
+                            )
+                    finally:
+                        player._recovering_voice = False
                 if original_track:
                     await player.play(
                         track=original_track,
@@ -398,6 +406,8 @@ class Node:
                     )
                     if was_paused:
                         await player.set_pause(True)
+                self._logger.info("Restored Lavalink voice/player for guild %s.",
+                                  player.guild.id)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
