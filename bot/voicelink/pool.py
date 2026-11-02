@@ -481,7 +481,11 @@ class NodePool:
 
     @classmethod
     def get_best_node(cls, *, algorithm: NodeAlgorithm) -> Node:
-        available_nodes = [node for node in cls._nodes.values() if node._available]
+        available_nodes = [
+            node for node in cls._nodes.values()
+            if node._available and node.is_connected
+            and getattr(node, '_session_id', None)
+        ]
 
         if not available_nodes:
             raise NoNodesAvailable("There are no nodes available.")
@@ -498,7 +502,10 @@ class NodePool:
     def get_node(cls, *, identifier: str = None) -> Node:
         available_nodes = {
             node for _, node in cls._nodes.items()
+            # A newly connected websocket is not playable until Lavalink
+            # supplies a fresh sessionId in its ready frame.
             if node._available and node.is_connected
+            and getattr(node, '_session_id', None)
         }
 
         if identifier:
