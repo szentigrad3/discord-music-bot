@@ -502,13 +502,13 @@ class TestDockerCompose(unittest.TestCase):
         )
 
     def test_lavalink_has_spring_config_location(self):
-        """The committed docker-compose.yml lavalink service must set SPRING_CONFIG_LOCATION."""
+        """Compose uses the tracked YAML by default and permits local overrides."""
         env = self._get_lavalink_env()
         self.assertIn(
-            "SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml",
+            "SPRING_CONFIG_LOCATION=file:/opt/lavalink/"
+            "${LAVALINK_CONFIG_FILE:-application.docker.yml}",
             env,
-            "docker-compose.yml lavalink service must set SPRING_CONFIG_LOCATION to "
-            "file:/opt/lavalink/application.docker.yml.",
+            "Lavalink must default to the Docker YAML and support ignored private overlays.",
         )
 
     def test_compose_has_watchtower_service(self):
