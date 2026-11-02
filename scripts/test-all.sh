@@ -6,7 +6,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 echo "== Python version =="
 "$PYTHON_BIN" --version
 echo "== Syntax and import compilation =="
-"$PYTHON_BIN" -m compileall -q bot tests install.py update.py update_lavalink.py
+"$PYTHON_BIN" -m compileall -q bot tests scripts install.py update.py update_lavalink.py
 echo "== Complete unit suite =="
 "$PYTHON_BIN" -m unittest discover -s tests -p 'test_*.py' -v
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
