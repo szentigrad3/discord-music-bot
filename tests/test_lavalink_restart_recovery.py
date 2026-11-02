@@ -150,3 +150,52 @@ class RestartRecoveryTests(unittest.IsolatedAsyncioTestCase):
         player.send = AsyncMock()
         self.assertFalse(await player._dispatch_voice_update())
         player.send.assert_not_awaited()
+
+    async def test_connect_waits_for_new_ready_session_before_recovery(self):
+        node, player = make_recovering_node()
+        node._available = False
+        node._session_id = 'obsolete'
+        node._session = MagicMock()
+        node._session.ws_connect = AsyncMock(return_value=MagicMock())
+        node._bot = MagicMock()
+        node._info = None
+        node._websocket_uri = 'ws://lavalink:2333/v4/websocket'
+        node._headers = {}
+        node._heartbeat = 30
+        node.send = AsyncMock(return_value={})
+        node.reconnect = AsyncMock()
+
+        def on_listener_created(coro):
+            coro.close()
+            self.assertIsNone(node._session_id)
+            node._session_id = 'new-session'
+            node._ready_event.set()
+            return MagicMock()
+
+        node._bot.loop.create_task = MagicMock(side_effect=on_listener_created)
+        with patch('bot.voicelink.pool.NodeInfo', return_value=MagicMock()):
+            await node.connect()
+        self.assertEqual(node._session_id, 'new-session')
+        node.reconnect.assert_awaited_once()
+
+    async def test_no_new_ready_session_never_restores_audio(self):
+        node, player = make_recovering_node()
+        node._available = False
+        node._session = MagicMock()
+        node._session.ws_connect = AsyncMock(return_value=MagicMock())
+        node._session.ws_connect.return_value.close = AsyncMock()
+        node._bot = MagicMock()
+        node._bot.loop.create_task = MagicMock()
+        node._websocket_uri = 'ws://lavalink:2333/v4/websocket'
+        node._headers = {}
+        node._heartbeat = 30
+        node.send = AsyncMock(return_value={})
+        node.reconnect = AsyncMock()
+        with patch('bot.voicelink.pool.NodeInfo', return_value=MagicMock()):
+            with patch('bot.voicelink.pool.asyncio.wait_for', side_effect=asyncio.TimeoutError):
+                from bot.voicelink.exceptions import NodeConnectionFailure
+                with self.assertRaises(NodeConnectionFailure):
+                    await node.connect()
+        node.reconnect.assert_not_awaited()
+        self.assertFalse(node._available)
+        node._session.ws_connect.return_value.close.assert_awaited_once()
