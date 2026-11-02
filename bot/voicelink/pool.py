@@ -275,10 +275,18 @@ class Node:
                 self._websocket_uri, headers=self._headers, heartbeat=self._heartbeat
             )
 
-            self._task = self._bot.loop.create_task(self._listen())
+            # Do not start the listener until the REST handshake is usable.
+            # A failed /info request must not leave an orphan listener or a
+            # node that reports available without having completed startup.
             self._available = True
-            self._info = NodeInfo(await self.send(RequestMethod.GET, query="info"))
-
+            try:
+                self._info = NodeInfo(await self.send(RequestMethod.GET, query="info"))
+            except Exception:
+                self._available = False
+                await self._websocket.close()
+                self._websocket = None
+                raise
+            self._task = self._bot.loop.create_task(self._listen())
             self._logger.info(f"Node [{self._identifier}] is connected!")
 
         except aiohttp.ClientConnectorError:
@@ -426,7 +434,8 @@ class NodePool:
     @classmethod
     def get_node(cls, *, identifier: str = None) -> Node:
         available_nodes = {
-            node for _, node in cls._nodes.items() if node.is_connected
+            node for _, node in cls._nodes.items()
+            if node._available and node.is_connected
         }
 
         if identifier:
@@ -467,6 +476,13 @@ class NodePool:
             logger=logger
         )
 
-        await node.connect()
+        try:
+            await node.connect()
+        except Exception:
+            # Close sessions created here on a failed initial connection.
+            # An externally provided session belongs to its caller.
+            if session is None:
+                await node._session.close()
+            raise
         cls._nodes[node._identifier] = node
         return node
