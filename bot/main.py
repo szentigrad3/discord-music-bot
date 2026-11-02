@@ -85,7 +85,7 @@ async def on_voicelink_track_end(player, track, reason: str) -> None:
     # Reason 'replaced' means a new track was explicitly started, so skip
     if reason == 'replaced':
         return
-    await music_player._on_track_end()
+    await music_player._on_track_end(reason=reason, ended_track=track)
 
 
 @bot.event
