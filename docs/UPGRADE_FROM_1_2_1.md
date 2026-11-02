@@ -173,6 +173,49 @@ docker compose logs --tail=150 bot | grep -Ei 'voice|node|lavalink|recover|recon
 Never post private `settings.json`, `.env`, access tokens or full URLs
 containing credentials.
 
+## Graceful Docker stop: ensure BENDER leaves Discord voice
+
+The original Docker start command ran Python directly without a SIGTERM
+handler. A `docker compose stop bot` or `restart bot` could terminate
+the process without sending Discord a voice-leave event, leaving BENDER
+appearing in the voice channel even after the container stopped.
+
+The development branch now registers SIGTERM/SIGINT callbacks. On a normal
+Docker stop it first cancels initial Lavalink retries, disconnects all
+Voicelink players from Discord voice, then closes the Discord gateway.
+Docker Compose gives the bot up to 45 seconds before force-killing it;
+voice cleanup is bounded to 25 seconds. Existing private credentials and
+saved playlists are not touched.
+
+To verify on the **development** checkout:
+
+```bash
+cd ~/discord-music-bot-next
+git pull --ff-only
+bash scripts/test-all.sh
+docker compose up -d --build --no-deps bot
+```
+
+Join voice, play a track, then run:
+
+```bash
+docker compose stop bot
+docker compose ps -a
+docker compose logs --tail=80 bot | grep -Ei 'Shutdown requested|voice|shutdown complete|error'
+```
+
+The logs should contain `Shutdown requested: leaving Discord voice channels.`
+and `Discord bot shutdown complete.` BENDER should disappear from the
+Discord voice channel, not just stop producing audio. Discord clients can
+briefly show stale voice membership after process exit, so refresh the Discord
+view before reporting a failure. If it persists, provide the bot shutdown
+log excerpt and Docker status, **not** your private config.
+
+After the test you can start BENDER again with
+`docker compose up -d bot`. This changes only the bot container;
+Lavalink and saved playlists remain intact. Avoid `docker compose down -v`,
+which would remove Docker volumes.
+
 ## Configuration details
 
 - If `settings.json` uses `lavalink.host=localhost`, the bot already
