@@ -107,3 +107,40 @@ parallel; unresolvable tracks are skipped.
 To confirm persistence, save a small playlist, restart the bot, list and load
 it, then delete it. Do not publish your production `data/bot.db` or
 `settings.json` in a public support log.
+
+## Configuration preflight (no external connections)
+
+```bash
+python scripts/doctor.py
+# Optional: fail on warnings as well as configuration errors
+python scripts/doctor.py --strict
+```
+
+The doctor checks essential bot credentials are configured, Lavalink host,
+port and password fields are usable, and any configured dashboard OAuth
+settings are coherent. It deliberately never prints tokens or passwords.
+It is safe to run before a deployment, but cannot guarantee that a Discord
+token is actually valid or that a Lavalink server is reachable.
+
+## November development additions
+
+- Initial Lavalink node creation is now supervised: transient failures
+  trigger bounded exponential retries without blocking Discord's ready event.
+  Voicelink retains responsibility for reconnecting registered nodes.
+- Local aiohttp integration tests exercise authenticated Lavalink REST
+  requests against a fake loopback-only server, independent of public APIs.
+- Concurrent Spotify searches share one token-refresh operation, with
+  monotonic expiry checks.
+- Optional audio-filter failures no longer cause a playing track to be
+  discarded. The player commits volume and filter state only on successful
+  Lavalink requests.
+- Saved-playlist editing adds show, rename, add-current-track and remove,
+  with transactional SQLite updates and explicit ownership checks.
+- Prefix playlist list/show results are delivered privately by DM (or report
+  a generic error when DMs are closed); slash responses are ephemeral.
+
+Additional live checks: save, rename, add, remove and load a playlist in a
+private test server; verify that no private listing is exposed in public
+prefix channels. Restart Lavalink while the bot is running and confirm
+recovery without duplicate Discord slash-command registration. Confirm
+playback, skip/back/skipto and dashboard OAuth after node recovery.
