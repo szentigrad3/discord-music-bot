@@ -183,9 +183,10 @@ class MusicPlayer:
             return
 
         previous = self.current
-        self.history.append(previous)
-        if len(self.history) > 20:
-            del self.history[:-20]
+        if reason not in ('loadfailed', 'cleanup'):
+            self.history.append(previous)
+            if len(self.history) > 20:
+                del self.history[:-20]
 
         if (self.repeat_mode == RepeatMode.ALL
                 and reason not in ('loadfailed', 'cleanup')
@@ -270,11 +271,13 @@ class MusicPlayer:
 
     async def stop(self) -> None:
         async with self._advance_lock:
+            # Preserve the queue if Lavalink refuses the stop request.
+            # A subsequent retry should not lose every waiting track.
+            await self._vl_player.stop()
             self.tracks = []
             self.repeat_mode = RepeatMode.OFF
             self.current = None
             self.paused = False
-            await self._vl_player.stop()
             await self._disable_controller()
 
     async def set_volume(self, vol: int) -> None:
