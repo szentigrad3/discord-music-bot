@@ -67,7 +67,9 @@ services:
       - ./data:/app/data
       - ./settings.json:/app/settings.json
     ports:
-      - "${DASHBOARD_PORT:-3000}:3000"
+      # Bind the dashboard to loopback by default; publish through a TLS reverse proxy.
+      # Set DASHBOARD_BIND_HOST=0.0.0.0 only when intentionally exposing the port.
+      - "${DASHBOARD_BIND_HOST:-127.0.0.1}:${DASHBOARD_PORT:-3000}:3000"
     depends_on:
       lavalink:
         condition: service_healthy
