@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import re
+from weakref import WeakValueDictionary
 from typing import TYPE_CHECKING
 
 import discord
@@ -17,6 +19,19 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# A weak mapping avoids retaining idle guild locks indefinitely. Each active
+# caller holds a strong reference to its lock for the duration of the request.
+_connect_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+
+
+def _get_connect_lock(guild_id: str) -> asyncio.Lock:
+    lock = _connect_locks.get(guild_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _connect_locks[guild_id] = lock
+    return lock
+
+
 async def get_or_create_player(
     guild: discord.Guild,
     voice_channel: discord.VoiceChannel,
@@ -24,19 +39,19 @@ async def get_or_create_player(
     bot: commands.Bot,
 ) -> MusicPlayer:
     guild_id = str(guild.id)
-    if guild_id in bot.queues:
-        existing: MusicPlayer = bot.queues[guild_id]
-        # Move to new channel if needed
-        if existing._vl_player.channel and existing._vl_player.channel.id != voice_channel.id:
-            await existing._vl_player.move_to(voice_channel)
-        return existing
+    async with _get_connect_lock(guild_id):
+        if guild_id in bot.queues:
+            existing: MusicPlayer = bot.queues[guild_id]
+            if existing._vl_player.channel and existing._vl_player.channel.id != voice_channel.id:
+                await existing._vl_player.move_to(voice_channel)
+            return existing
 
-    vl_player: VoicelinkPlayer = await voice_channel.connect(
-        cls=VoicelinkPlayer(bot, voice_channel), self_deaf=True
-    )
-    player = MusicPlayer(guild, vl_player, text_channel, bot)
-    bot.queues[guild_id] = player
-    return player
+        vl_player: VoicelinkPlayer = await voice_channel.connect(
+            cls=VoicelinkPlayer(bot, voice_channel), self_deaf=True
+        )
+        player = MusicPlayer(guild, vl_player, text_channel, bot)
+        bot.queues[guild_id] = player
+        return player
 
 
 async def resolve_tracks(query: str, requested_by: str | None = None) -> list[Track]:
@@ -90,7 +105,7 @@ async def _ensure_spotify_token() -> bool:
     credentials = base64.b64encode(f'{client_id}:{client_secret}'.encode()).decode()
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
             async with session.post(
                 'https://accounts.spotify.com/api/token',
                 headers={
