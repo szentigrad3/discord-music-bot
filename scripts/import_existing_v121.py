@@ -73,7 +73,7 @@ def _plan(source: Path, dest: Path) -> list[str]:
         names.append('data/bot.db (SQLite backup)')
     if (source / 'data').is_dir():
         for file in sorted((source / 'data').rglob('*')):
-            if file.is_file() and not file.is_symlink() and file.name != 'bot.db' and not file.name.startswith('bot.db-'):
+            if file.is_file() and not file.is_symlink() and file.name not in ('bot.db', '.gitkeep') and not file.name.startswith('bot.db-'):
                 rel = file.relative_to(source).as_posix()
                 if (dest / rel).exists():
                     raise FileExistsError(f'{rel} already exists in destination.')
@@ -111,7 +111,7 @@ def import_setup(source: Path, dest: Path, *, apply: bool = False) -> list[str]:
 
     if data.is_dir():
         for src in sorted(data.rglob('*')):
-            if not src.is_file() or src.is_symlink() or src.name == 'bot.db' or src.name.startswith('bot.db-'):
+            if not src.is_file() or src.is_symlink() or src.name in ('bot.db', '.gitkeep') or src.name.startswith('bot.db-'):
                 continue
             target = dest / src.relative_to(source)
             if not target.exists():
