@@ -109,6 +109,26 @@ class DeterministicPlaybackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(p.current, second)
         self.assertEqual(p.tracks, [third])
 
+    async def test_stop_failure_retains_playback_and_queue(self):
+        p = player()
+        current, next_track = make_track('current'), make_track('next')
+        p.current = current
+        p.tracks = [next_track]
+        p._vl_player.stop.side_effect = RuntimeError('node down')
+        with self.assertRaises(RuntimeError):
+            await p.stop()
+        self.assertIs(p.current, current)
+        self.assertEqual(p.tracks, [next_track])
+
+    async def test_load_failed_track_is_not_added_to_history(self):
+        p = player()
+        current, next_track = make_track('failed'), make_track('next')
+        p.current = current
+        p.tracks = [next_track]
+        await p._on_track_end(reason='loadFailed', ended_track=current._vl_track)
+        self.assertIs(p.current, next_track)
+        self.assertEqual(p.history, [])
+
     async def test_repeat_all_does_not_overfill_waiting_queue(self):
         p = player()
         old = make_track('old')
