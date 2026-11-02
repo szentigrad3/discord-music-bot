@@ -24,13 +24,18 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 > rather than replacing your `settings.json`, database or customized Lavalink
 > configuration. The importer preserves those files outside Git.
 
-## Current development work (not released)
+## Stable v2.0.0 — BENDER overhaul (2 November 2026)
 
-The active maintenance pull request improves Discord reconnect handling,
-queue event safety, voice-channel cleanup, Spotify playlist lookup and
-dashboard authentication. Vocard's
-[beta branch](https://github.com/ChocoMeow/Vocard/tree/beta) is used as a
-behaviour and architecture reference.
+This major release upgrades the earlier v1.2.1 music bot with resilient
+Lavalink restarts, clean Docker voice shutdown, saved playlists, queue/controller
+improvements, safer cross-channel access, and a documented private configuration
+migration path. Vocard's [beta branch](https://github.com/ChocoMeow/Vocard/tree/beta)
+was a reference for the music interface and architecture.
+
+[Release and migration notes](docs/RELEASE_v2.0.0.md) provide the verified
+features and safe upgrade commands. Discord OAuth dashboard support remains
+optional and **disabled** unless a session secret is configured; it was not
+part of the user's live release test.
 
 - Up to **500 waiting tracks** per server, with atomic queue-limit checks.
 - Failed and stale Lavalink track-end events cannot recursively drain/replay
@@ -51,7 +56,7 @@ available; it does not connect to Discord or replace live audio smoke tests.
 See [development instructions](docs/DEVELOPMENT.md) and
 [Vocard reference notes](docs/VOCARD_BETA_REFERENCE.md).
 
-## Saved playlists (development branch)
+## Saved playlists
 
 Your own playlist collection is stored persistently in the bot's SQLite
 database. Playlists are private to each user within each server, and cannot be
