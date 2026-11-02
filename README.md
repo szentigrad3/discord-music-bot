@@ -19,6 +19,33 @@ A feature-rich Discord music bot built with Python 3.13, discord.py v2, and Lava
 - 🗄️ **SQLite** via aiosqlite
 - 🐳 **Docker** support
 
+## Current development work (not released)
+
+The active maintenance pull request improves Discord reconnect handling,
+queue event safety, voice-channel cleanup, Spotify playlist lookup and
+dashboard authentication. Vocard's
+[beta branch](https://github.com/ChocoMeow/Vocard/tree/beta) is used as a
+behaviour and architecture reference.
+
+- Up to **500 waiting tracks** per server, with atomic queue-limit checks.
+- Failed and stale Lavalink track-end events cannot recursively drain/replay
+  the queue. Manual skip bypasses repeat-one.
+- Spotify playlist matches resolve in order with at most three concurrent
+  lookups; token and API requests use timeouts.
+- Debounced empty-channel auto-leave and protected concurrent voice joins.
+- Additional GitHub Actions tests and release-tag verification.
+
+**Local all-in-one checks** (install requirements plus `pyyaml` first):
+
+```bash
+bash scripts/test-all.sh
+```
+
+The runner validates Python sources, unit tests, and Docker Compose when it is
+available; it does not connect to Discord or replace live audio smoke tests.
+See [development instructions](docs/DEVELOPMENT.md) and
+[Vocard reference notes](docs/VOCARD_BETA_REFERENCE.md).
+
 ## Requirements
 
 | Requirement | Standalone (no Docker) | Docker |
