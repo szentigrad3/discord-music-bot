@@ -84,8 +84,12 @@ class RestartRecoveryTests(unittest.IsolatedAsyncioTestCase):
         player._guild.change_voice_state.side_effect = new_discord_events
         await node.reconnect()
         player._dispatch_voice_update.assert_not_awaited()
-        player._guild.change_voice_state.assert_awaited_once()
+        self.assertEqual(player._guild.change_voice_state.await_count, 2)
+        self.assertIsNone(player._guild.change_voice_state.await_args_list[0].kwargs['channel'])
+        self.assertIs(player._guild.change_voice_state.await_args_list[1].kwargs['channel'],
+                      player.channel)
         player.play.assert_awaited_once()
+        self.assertFalse(player._recovering_voice)
         player.teardown.assert_not_awaited()
 
     async def test_fresh_handshake_timeout_preserves_player(self):
@@ -199,3 +203,20 @@ class RestartRecoveryTests(unittest.IsolatedAsyncioTestCase):
         node.reconnect.assert_not_awaited()
         self.assertFalse(node._available)
         node._session.ws_connect.return_value.close.assert_awaited_once()
+
+    async def test_intentional_voice_refresh_does_not_destroy_music_queue(self):
+        player = object.__new__(Player)
+        player._recovering_voice = True
+        player._voice_state = {'event': {'token': 'old-token'}}
+        player.teardown = AsyncMock()
+        await player.on_voice_state_update({'channel_id': None, 'session_id': None})
+        player.teardown.assert_not_awaited()
+        self.assertEqual(player._voice_state, {})
+
+    async def test_real_voice_disconnect_still_cleans_up(self):
+        player = object.__new__(Player)
+        player._recovering_voice = False
+        player._voice_state = {}
+        player.teardown = AsyncMock()
+        await player.on_voice_state_update({'channel_id': None, 'session_id': None})
+        player.teardown.assert_awaited_once()
