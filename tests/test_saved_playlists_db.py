@@ -1,4 +1,5 @@
 """SQLite saved-playlist persistence, privacy, and input-boundary tests."""
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from bot.db import (
     MAX_SAVED_TRACKS,
     delete_saved_playlist,
     get_saved_playlist,
+    get_guild_settings,
     init_db,
     list_saved_playlists,
     save_playlist,
@@ -74,6 +76,13 @@ class SavedPlaylistsDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(await list_saved_playlists('g', 'u')), MAX_SAVED_PLAYLISTS)
         self.assertEqual(await get_saved_playlist('g', 'u', 'Mix0'),
                          ['https://example.com/replaced'])
+
+    async def test_concurrent_guild_initialization_is_safe(self):
+        guilds = await asyncio.gather(*(
+            get_guild_settings('new-guild') for _ in range(12)
+        ))
+        self.assertEqual(len(guilds), 12)
+        self.assertTrue(all(row['guildId'] == 'new-guild' for row in guilds))
 
     async def test_database_persists_between_connections(self):
         await save_playlist('g', 'u', 'Persistent', ['https://example.com/a'])
