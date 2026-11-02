@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -44,9 +45,10 @@ class LegacyMigrationTests(unittest.TestCase):
         (self.new / 'data/sfx/.gitkeep').write_text('', encoding='utf8')
         (self.old / 'data/sfx/custom.mp3').write_bytes(b'fake music')
         db = self.old / 'data/bot.db'
-        with sqlite3.connect(db) as conn:
-            conn.execute('CREATE TABLE GuildSettings (guildId TEXT)')
-            conn.execute('INSERT INTO GuildSettings (guildId) VALUES (?)', ('guild-test',))
+        with closing(sqlite3.connect(db)) as conn:
+            with conn:
+                conn.execute('CREATE TABLE GuildSettings (guildId TEXT)')
+                conn.execute('INSERT INTO GuildSettings (guildId) VALUES (?)', ('guild-test',))
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -80,7 +82,7 @@ class LegacyMigrationTests(unittest.TestCase):
     def test_sqlite_data_survives_and_file_is_private(self):
         import_setup(self.old, self.new, apply=True)
         db = self.new / 'data/bot.db'
-        with sqlite3.connect(db) as conn:
+        with closing(sqlite3.connect(db)) as conn:
             self.assertEqual(conn.execute('SELECT guildId FROM GuildSettings').fetchone(),
                              ('guild-test',))
         self.assertEqual(db.stat().st_mode & 0o777, 0o600)
