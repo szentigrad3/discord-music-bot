@@ -182,6 +182,12 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
     logger.info('Starting Lavalink…')
     log_path = jar_path.parent / 'lavalink.log'
     log_file = open(log_path, 'a', encoding='utf-8')  # noqa: WPS515
+    # A private local Lavalink config avoids embedding real passwords in
+    # tracked application.yml while preserving existing source/plugin tuning.
+    env = os.environ.copy()
+    local_config = jar_path.parent / 'application.local.yml'
+    if local_config.is_file():
+        env['SPRING_CONFIG_LOCATION'] = f'file:{local_config}'
     try:
         proc = await asyncio.create_subprocess_exec(
             'java', '--enable-native-access=ALL-UNNAMED', '-jar', str(jar_path),
@@ -189,6 +195,7 @@ async def _launch_lavalink() -> asyncio.subprocess.Process | None:
             stdin=asyncio.subprocess.DEVNULL,
             stdout=log_file,
             stderr=log_file,
+            env=env,
         )
     except FileNotFoundError:
         logger.warning('java not found, skipping Lavalink auto-start')
