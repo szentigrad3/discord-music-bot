@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from weakref import WeakValueDictionary
+from urllib.parse import urlsplit
 from typing import TYPE_CHECKING
 
 import discord
@@ -54,8 +55,20 @@ async def get_or_create_player(
         return player
 
 
+def _spotify_link(query: str) -> tuple[str, str] | None:
+    """Accept only genuine Spotify album, playlist and track URLs."""
+    try:
+        url = urlsplit(query.strip())
+        if url.scheme not in ('http', 'https') or url.hostname != 'open.spotify.com':
+            return None
+    except ValueError:
+        return None
+    match = re.fullmatch(r'/(track|album|playlist)/([A-Za-z0-9]+)/?', url.path)
+    return (match.group(1), match.group(2)) if match else None
+
+
 async def resolve_tracks(query: str, requested_by: str | None = None) -> list[Track]:
-    if re.search(r'open\.spotify\.com/(track|album|playlist)/', query):
+    if _spotify_link(query):
         return await _resolve_spotify(query, requested_by)
 
     return await _resolve_via_voicelink(query, requested_by)
@@ -128,7 +141,7 @@ async def _ensure_spotify_token() -> bool:
 async def _spotify_get(path: str) -> dict:
     import aiohttp
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
         async with session.get(
             f'https://api.spotify.com/v1{path}',
             headers={'Authorization': f'Bearer {_spotify_access_token}'},
@@ -143,33 +156,44 @@ async def _resolve_spotify(url: str, requested_by: str | None) -> list[Track]:
     if not ok:
         raise RuntimeError('Spotify support is not configured.')
 
-    track_match = re.search(r'open\.spotify\.com/track/([A-Za-z0-9]+)', url)
-    album_match = re.search(r'open\.spotify\.com/album/([A-Za-z0-9]+)', url)
-    playlist_match = re.search(r'open\.spotify\.com/playlist/([A-Za-z0-9]+)', url)
-
+    link = _spotify_link(url)
+    if link is None:
+        raise RuntimeError('Unsupported Spotify URL.')
+    kind, identifier = link
     track_names: list[str] = []
 
-    if track_match:
-        t = await _spotify_get(f'/tracks/{track_match.group(1)}')
+    if kind == 'track':
+        t = await _spotify_get(f'/tracks/{identifier}')
         track_names.append(f'{t["artists"][0]["name"]} {t["name"]}')
-    elif album_match:
-        data = await _spotify_get(f'/albums/{album_match.group(1)}/tracks?limit=50')
+    elif kind == 'album':
+        data = await _spotify_get(f'/albums/{identifier}/tracks?limit=50')
         for t in data['items'][:50]:
-            track_names.append(f'{t["artists"][0]["name"]} {t["name"]}')
-    elif playlist_match:
-        data = await _spotify_get(f'/playlists/{playlist_match.group(1)}/tracks?limit=50')
-        for item in data['items'][:50]:
-            if item.get('track'):
-                t = item['track']
+            if t.get('artists') and t.get('name'):
                 track_names.append(f'{t["artists"][0]["name"]} {t["name"]}')
-    else:
-        raise RuntimeError('Unsupported Spotify URL.')
+    elif kind == 'playlist':
+        data = await _spotify_get(f'/playlists/{identifier}/tracks?limit=50')
+        for item in data['items'][:50]:
+            t = item.get('track') if isinstance(item, dict) else None
+            if isinstance(t, dict) and t.get('artists') and t.get('name'):
+                track_names.append(f'{t["artists"][0]["name"]} {t["name"]}')
 
-    tracks: list[Track] = []
-    for name in track_names:
-        try:
-            resolved = await _resolve_via_voicelink(name, requested_by)
-            tracks.extend(resolved)
-        except Exception:
-            pass
-    return tracks
+    if not track_names:
+        raise RuntimeError('The Spotify link contains no playable tracks.')
+
+    # Keep the API load bounded; preserve playlist order even when calls finish
+    # in a different order. Unavailable entries can be skipped individually.
+    limit = asyncio.Semaphore(3)
+
+    async def resolve_one(name: str) -> list[Track]:
+        async with limit:
+            try:
+                return await _resolve_via_voicelink(name, requested_by)
+            except Exception as exc:
+                logger.warning('[Spotify] Cannot resolve %r: %s', name, exc)
+                return []
+
+    resolved_groups = await asyncio.gather(*(resolve_one(name) for name in track_names))
+    tracks = [track for group in resolved_groups for track in group]
+    if not tracks:
+        raise RuntimeError('No playable matches were found for this Spotify link.')
+    return tracks[:50]
