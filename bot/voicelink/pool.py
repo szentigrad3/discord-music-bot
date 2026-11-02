@@ -97,6 +97,8 @@ class Node:
 
         self.resume_key: str = resume_key or str(os.urandom(8).hex())
         self._session_id: str = None
+        self._ready_event = asyncio.Event()
+        self._resumed = False
         self._available: bool = None
 
         self._headers: Dict[str, str] = {
@@ -229,6 +231,9 @@ class Node:
 
         if op == "ready":
             self._session_id = data.get("sessionId")
+            self._resumed = bool(data.get("resumed", False))
+            if self._session_id:
+                self._ready_event.set()
 
         if op == "stats":
             self._stats = NodeStats(data)
@@ -272,6 +277,12 @@ class Node:
                 self._logger.info(f"Node [{self._identifier}] already connected.")
                 return self
 
+            # A restarted Lavalink process returns a *new* session ID.
+            # Never send player REST requests against the previous process's
+            # stale session. Wait for its WebSocket ready event before recovery.
+            self._session_id = None
+            self._resumed = False
+            self._ready_event = asyncio.Event()
             self._websocket = await self._session.ws_connect(
                 self._websocket_uri, headers=self._headers, heartbeat=self._heartbeat
             )
@@ -288,6 +299,17 @@ class Node:
                 self._websocket = None
                 raise
             self._task = self._bot.loop.create_task(self._listen())
+            if self.players:
+                try:
+                    await asyncio.wait_for(self._ready_event.wait(), timeout=12)
+                except asyncio.TimeoutError as exc:
+                    self._available = False
+                    await self._websocket.close()
+                    self._websocket = None
+                    self._task.cancel()
+                    raise NodeConnectionFailure(
+                        f"Node [{self._identifier}] did not send a ready session."
+                    ) from exc
             self._logger.info(f"Node [{self._identifier}] is connected!")
 
         except aiohttp.ClientConnectorError:
@@ -303,7 +325,7 @@ class Node:
                 f"The URI for node '{self._identifier}' is invalid."
             )
 
-        if self.players:
+        if self.players and not self._resumed:
             await self.reconnect()
 
         return self
@@ -321,31 +343,69 @@ class Node:
         self._logger.info(f"Node [{self._identifier}] is disconnected!")
 
     async def reconnect(self) -> None:
-        await asyncio.sleep(10)
-        for player in self.players.copy().values():
-            await asyncio.sleep(3)
+        """Recreate the server-side players after Lavalink loses its session.
+
+        Discord may not emit another voice-server event when a bot already in
+        the same channel requests the *same* channel. Clearing the last valid
+        Discord token/session and waiting for that event strands the bot in
+        voice with silent playback. Restore the cached Discord voice handshake
+        to the new Lavalink session first. Only request fresh voice state when
+        the cache is incomplete or refused by Lavalink.
+        """
+        if not self._session_id:
+            raise NodeNotAvailable("Lavalink session is not ready for recovery.")
+        for player in list(self.players.values()):
+            if not player.channel:
+                continue
             try:
-                if player.channel:
-                    # Clear stale voice state so the upcoming VOICE_STATE_UPDATE /
-                    # VOICE_SERVER_UPDATE pair is used exclusively, preventing a
-                    # mismatched old sessionId + new token that causes Lavalink 400.
-                    player._voice_state.clear()
-                    # Re-trigger Discord's VOICE_STATE_UPDATE + VOICE_SERVER_UPDATE
-                    # so fresh tokens/session IDs are obtained instead of reusing
-                    # potentially stale cached voice state that would cause 400 errors.
+                original_track = player.current
+                original_position = player._last_position or 0
+                was_paused = player.is_paused
+                voice_state = player._voice_state
+                usable_voice = (
+                    voice_state.get("sessionId")
+                    and voice_state.get("channelId")
+                    and isinstance(voice_state.get("event"), dict)
+                    and voice_state["event"].get("token")
+                    and voice_state["event"].get("endpoint")
+                )
+                if usable_voice:
+                    restored = await player._dispatch_voice_update()
+                else:
+                    restored = False
+
+                if not restored:
+                    # Keep cached data for diagnostics; do not discard the
+                    # queue or destroy the user's Discord voice connection.
+                    voice_state.clear()
                     await player._guild.change_voice_state(
                         channel=player.channel, self_deaf=True
                     )
-                if player.current:
+                    ready = getattr(player, "_voice_ready_event", None)
+                    if ready is not None:
+                        await asyncio.wait_for(ready.wait(), timeout=8)
+                    else:
+                        self._logger.warning(
+                            "Guild %s has no voice handshake confirmation.",
+                            player.guild.id,
+                        )
+                if original_track:
                     await player.play(
-                        track=player.current,
-                        start=min(player._last_position, player.current.length)
+                        track=original_track,
+                        start=min(max(0, original_position), original_track.length),
                     )
-                    if player.is_paused:
+                    if was_paused:
                         await player.set_pause(True)
-            except Exception:
-                await player.teardown()
-            await asyncio.sleep(2)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Destructive teardown here used to delete music queues when
+                # the backend had a transient error. Preserve the guild's
+                # player and let later commands or the next retry recover it.
+                self._logger.warning(
+                    "Lavalink recovery postponed for guild %s (%s).",
+                    player.guild.id, type(exc).__name__,
+                )
 
     async def build_track(self, identifier: str, requester=None) -> Track:
         data = await self.send(RequestMethod.GET, f"decodetrack?encodedTrack={identifier}")
