@@ -42,6 +42,18 @@ def _dotenv_literal(value: str) -> str:
     return "'" + value.replace('\\', '\\\\').replace("'", "\\'") + "'"
 
 
+_TEMPLATE_BACKUP = 'settings.json.generated-template.backup'
+
+
+def _is_generated_template(dest: Path) -> bool:
+    """Only recognise the exact installer-generated template, never real settings."""
+    current = dest / 'settings.json'
+    example = dest / 'settings Example.json'
+    return (current.is_file() and not current.is_symlink()
+            and example.is_file() and not example.is_symlink()
+            and current.read_bytes() == example.read_bytes())
+
+
 def _plan(source: Path, dest: Path) -> list[str]:
     if source.resolve() == dest.resolve() or source.resolve() in dest.resolve().parents:
         raise ValueError('Old and new installations must be separate directories.')
@@ -51,8 +63,13 @@ def _plan(source: Path, dest: Path) -> list[str]:
         raise FileNotFoundError('New checkout must contain docker-compose.yml.')
     if 'LAVALINK_PASSWORD' not in (dest / 'docker-compose.yml').read_text(encoding='utf-8'):
         raise ValueError('New checkout does not support a local Lavalink password.')
+    generated_placeholder = _is_generated_template(dest)
+    if generated_placeholder and (dest / _TEMPLATE_BACKUP).exists():
+        raise FileExistsError('An old generated-template backup already exists.')
     for source_rel, dest_rel in PRIVATE_FILES.items():
         if (source / source_rel).is_file() and (dest / dest_rel).exists():
+            if dest_rel == 'settings.json' and generated_placeholder:
+                continue
             raise FileExistsError(f'{dest_rel} already exists in the destination.')
     if (dest / '.env').exists():
         raise FileExistsError('The destination already has an .env file.')
@@ -78,6 +95,8 @@ def _plan(source: Path, dest: Path) -> list[str]:
                 if (dest / rel).exists():
                     raise FileExistsError(f'{rel} already exists in destination.')
                 names.append(rel)
+    if generated_placeholder:
+        names.insert(0, f'generated settings.json → {_TEMPLATE_BACKUP} (kept as backup)')
     return names + ['.env (generated locally)']
 
 
@@ -91,6 +110,11 @@ def import_setup(source: Path, dest: Path, *, apply: bool = False) -> list[str]:
 
     settings = json.loads((source / 'settings.json').read_text(encoding='utf-8'))
     password = settings['lavalink']['password']
+    # The older AIO runner could copy settings Example.json into the new
+    # checkout during an import-only test. Preserve it, and replace it only if
+    # byte-for-byte identical to the tracked example.
+    if _is_generated_template(dest):
+        (dest / 'settings.json').rename(dest / _TEMPLATE_BACKUP)
     for source_rel, dest_rel in PRIVATE_FILES.items():
         src = source / source_rel
         if src.is_file():
