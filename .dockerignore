@@ -16,3 +16,7 @@ lavalink/plugins
 lavalink/*.log
 *.db
 *.db-*
+
+# Private Lavalink configs are mounted by Docker Compose, not baked into bot images.
+lavalink/application.local.yml
+lavalink/application.docker.local.yml
