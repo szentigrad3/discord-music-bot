@@ -34,6 +34,7 @@ class LavalinkBootstrapTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transient_failure_retries_without_another_ready(self):
         connected = False
+        retried = asyncio.Event()
         bootstrap = LavalinkBootstrap(initial_delay=0.005, max_delay=0.01)
 
         async def connect():
@@ -41,12 +42,13 @@ class LavalinkBootstrapTests(unittest.IsolatedAsyncioTestCase):
             if not connected:
                 connected = True
                 raise RuntimeError('first connection failed')
+            retried.set()
 
         task = AsyncMock(side_effect=connect)
-        # Simulate an initial failure followed by a successful connection;
-        # the exists predicate tracks pool registration, not the attempt.
+        # Wait for the actual retry instead of assuming a 30-ms scheduler
+        # delay is sufficient on a busy CI runner (especially Python 3.14).
         bootstrap.ensure(task, lambda: False, logging.getLogger(__name__))
-        await asyncio.sleep(0.03)
+        await asyncio.wait_for(retried.wait(), timeout=1)
         self.assertEqual(task.await_count, 2)
         await bootstrap.close()
 
