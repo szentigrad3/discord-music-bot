@@ -3,7 +3,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.music.queue import get_or_create_player
+from bot.music.queue import VoiceChannelMismatchError, get_or_create_player
 from bot.voice_idle import EmptyVoiceManager
 
 
@@ -50,6 +50,27 @@ class ConcurrentJoinTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(p1, p2)
         self.assertEqual(channel.connect.await_count, 1)
         self.assertIs(bot.queues['42'], p1)
+
+    async def test_another_channel_cannot_hijack_existing_player(self):
+        guild, channel, voice, bot, player = create_voice_fixture()
+        original_channel = channel
+        other_channel = MagicMock()
+        other_channel.id = channel.id + 1
+        bot.queues[str(guild.id)] = player
+        with self.assertRaisesRegex(VoiceChannelMismatchError, 'another voice channel'):
+            await get_or_create_player(guild, other_channel, None, bot)
+        voice.move_to.assert_not_called()
+        other_channel.connect.assert_not_called()
+        self.assertIs(bot.queues[str(guild.id)], player)
+        self.assertIs(voice.channel, original_channel)
+
+    async def test_existing_player_same_channel_can_enqueue(self):
+        guild, channel, voice, bot, player = create_voice_fixture()
+        bot.queues[str(guild.id)] = player
+        existing = await get_or_create_player(guild, channel, None, bot)
+        self.assertIs(existing, player)
+        channel.connect.assert_not_called()
+        voice.move_to.assert_not_called()
 
     async def test_failed_connect_does_not_lock_future_joins(self):
         guild, channel, voice, bot, unused = create_voice_fixture()
