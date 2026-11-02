@@ -36,7 +36,7 @@ services:
       - _JAVA_OPTIONS=-Xmx1G --enable-native-access=ALL-UNNAMED
       - SERVER_PORT=2333
       - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD:-youshallnotpass}
-      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/application.docker.yml
+      - SPRING_CONFIG_LOCATION=file:/opt/lavalink/${LAVALINK_CONFIG_FILE:-application.docker.yml}
       # Disables Spring Cloud Config Server discovery entirely.
       # Without this, Lavalink attempts to contact http://localhost:8888 three times at
       # startup and logs "Connection refused" warnings even though the server does not exist.
