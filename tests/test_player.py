@@ -60,7 +60,7 @@ class TestDispatchVoiceUpdate(unittest.TestCase):
     """Tests for Player._dispatch_voice_update."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_returns_early_when_session_id_is_none(self):
         """Guard: returns immediately when Lavalink session ID is not yet set."""
@@ -252,7 +252,7 @@ class TestPlayDataFormat(unittest.TestCase):
     """Tests for Player.play() to verify correct Lavalink v4 data types."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_position_is_integer_not_string(self):
         """play() must send 'position' as an integer, not a string.
@@ -365,7 +365,7 @@ class TestOnVoiceServerUpdate(unittest.TestCase):
     """Tests for Player.on_voice_server_update / on_voice_state_update interaction."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_on_voice_server_update_dispatches_when_state_complete(self):
         """on_voice_server_update should trigger _dispatch_voice_update when sessionId and channelId are set."""
@@ -481,7 +481,7 @@ class TestYouTubeOAuth(unittest.TestCase):
     """Tests for YouTube OAuth refresh token integration."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_update_refresh_yt_access_token_uses_correct_url(self):
         """update_refresh_yt_access_token must POST to /v4/youtube/oauth."""
