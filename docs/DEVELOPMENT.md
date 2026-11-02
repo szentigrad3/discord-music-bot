@@ -70,3 +70,40 @@ Check playback sources and voice event ordering with a real Discord test guild
 and Lavalink node, including `finished`, `stopped`, `loadFailed` and
 `replaced` event reasons. Also verify the dashboard behind its intended
 HTTPS reverse proxy. Offline tests cannot prove source-provider availability.
+
+## Lavalink API smoke test (no Discord token required)
+
+The new read-only check verifies Lavalink's authenticated `/version` and
+`/v4/info` endpoints, using your existing `settings.json`. The password
+is sent only to the configured Lavalink server and never printed.
+
+Standalone installation:
+
+```bash
+python scripts/lavalink_smoke.py
+```
+
+Docker Compose installation:
+
+```bash
+docker compose exec -T bot python scripts/lavalink_smoke.py
+```
+
+This verifies the REST API version and reports loaded plugin names. It does
+**not** prove live YouTube/Spotify media extraction, voice WS forwarding,
+Discord permissions, or audible playback. Use the real-guild smoke checklist
+above for those release gates.
+
+## Saved playlists
+
+`/playlist save`, `/playlist list`, `/playlist load` and
+`/playlist delete` use the SQLite `SavedPlaylists` table, partitioned
+by Discord guild and user. The schema is created idempotently at startup.
+Each user can save up to 20 playlists with up to 50 original track URLs each.
+Stored tracks are re-resolved at load time rather than using ephemeral encoded
+Lavalink tracks. Multiple resolution requests are bounded at three in
+parallel; unresolvable tracks are skipped.
+
+To confirm persistence, save a small playlist, restart the bot, list and load
+it, then delete it. Do not publish your production `data/bot.db` or
+`settings.json` in a public support log.
