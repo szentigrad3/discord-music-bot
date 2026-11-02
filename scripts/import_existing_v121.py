@@ -16,11 +16,13 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-PRIVATE_FILES = (
-    'settings.json',
-    'lavalink/application.yml',
-    'lavalink/application.docker.yml',
-)
+# Keep local Lavalink configs separate from Git-tracked defaults.
+# This avoids merge conflicts and accidental git commits of embedded secrets.
+PRIVATE_FILES = {
+    'settings.json': 'settings.json',
+    'lavalink/application.yml': 'lavalink/application.local.yml',
+    'lavalink/application.docker.yml': 'lavalink/application.docker.local.yml',
+}
 
 
 def _private_copy(source: Path, target: Path) -> None:
@@ -49,9 +51,9 @@ def _plan(source: Path, dest: Path) -> list[str]:
         raise FileNotFoundError('New checkout must contain docker-compose.yml.')
     if 'LAVALINK_PASSWORD' not in (dest / 'docker-compose.yml').read_text(encoding='utf-8'):
         raise ValueError('New checkout does not support a local Lavalink password.')
-    for rel in PRIVATE_FILES:
-        if (source / rel).is_file() and (dest / rel).exists():
-            raise FileExistsError(f'{rel} already exists in the destination.')
+    for source_rel, dest_rel in PRIVATE_FILES.items():
+        if (source / source_rel).is_file() and (dest / dest_rel).exists():
+            raise FileExistsError(f'{dest_rel} already exists in the destination.')
     if (dest / '.env').exists():
         raise FileExistsError('The destination already has an .env file.')
     if (source / 'data/bot.db').is_file() and (dest / 'data/bot.db').exists():
@@ -62,7 +64,11 @@ def _plan(source: Path, dest: Path) -> list[str]:
     settings = json.loads((source / 'settings.json').read_text(encoding='utf-8'))
     password = settings.get('lavalink', {}).get('password')
     _dotenv_literal(password)
-    names = [rel for rel in PRIVATE_FILES if (source / rel).is_file()]
+    names = [
+        f'{source_rel} → {dest_rel}'
+        for source_rel, dest_rel in PRIVATE_FILES.items()
+        if (source / source_rel).is_file()
+    ]
     if (source / 'data/bot.db').is_file():
         names.append('data/bot.db (SQLite backup)')
     if (source / 'data').is_dir():
@@ -85,10 +91,10 @@ def import_setup(source: Path, dest: Path, *, apply: bool = False) -> list[str]:
 
     settings = json.loads((source / 'settings.json').read_text(encoding='utf-8'))
     password = settings['lavalink']['password']
-    for rel in PRIVATE_FILES:
-        src = source / rel
+    for source_rel, dest_rel in PRIVATE_FILES.items():
+        src = source / source_rel
         if src.is_file():
-            _private_copy(src, dest / rel)
+            _private_copy(src, dest / dest_rel)
 
     data = source / 'data'
     db = data / 'bot.db'
@@ -113,8 +119,14 @@ def import_setup(source: Path, dest: Path, *, apply: bool = False) -> list[str]:
                 shutil.copy2(src, target)
 
     envfile = dest / '.env'
-    envfile.write_text('LAVALINK_PASSWORD=' + _dotenv_literal(password) + '\n',
-                       encoding='utf-8')
+    docker_config = ('application.docker.local.yml'
+                     if (source / 'lavalink/application.docker.yml').is_file()
+                     else 'application.docker.yml')
+    envfile.write_text(
+        'LAVALINK_PASSWORD=' + _dotenv_literal(password) + '\n'
+        + 'LAVALINK_CONFIG_FILE=' + docker_config + '\n',
+        encoding='utf-8',
+    )
     envfile.chmod(0o600)
     return items
 
