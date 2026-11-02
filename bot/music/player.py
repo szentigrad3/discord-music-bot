@@ -217,6 +217,11 @@ class MusicPlayer:
             else:
                 self.tracks.extend(tracks)
 
+    async def snapshot_tracks(self) -> list[Track]:
+        """Take a consistent current+queue snapshot for saved playlists."""
+        async with self._advance_lock:
+            return ([self.current] if self.current else []) + list(self.tracks)
+
     # ------------------------------------------------------------------ controls
 
     async def skip(self) -> None:
