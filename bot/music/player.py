@@ -162,32 +162,40 @@ class MusicPlayer:
 
     async def _on_track_end(self, *, reason: str = 'finished',
                             ended_track=None) -> None:
-        """Advance a completed track once, ignoring stale Lavalink events."""
+        """Handle node events, serialized with user actions and enqueue requests."""
         async with self._advance_lock:
-            if self.current is None:
-                return
-            current_vl = self.current._vl_track
-            if ended_track is not None and current_vl is not ended_track:
-                # Old track-end events can arrive after another track starts.
-                return
-            if reason.lower() == 'replaced':
-                return
-            if reason.lower() == 'finished' and self.repeat_mode == RepeatMode.ONE:
-                await self._play(self.current)
-                return
+            await self._advance_locked(reason=reason, ended_track=ended_track)
 
-            previous = self.current
-            self.history.append(previous)
-            if len(self.history) > 20:
-                del self.history[:-20]
+    async def _advance_locked(self, *, reason: str,
+                              ended_track=None) -> None:
+        """Advance the queue while the caller holds _advance_lock."""
+        if self.current is None:
+            return
+        current_vl = self.current._vl_track
+        if ended_track is not None and current_vl is not ended_track:
+            # Late end event for a track already replaced locally.
+            return
+        reason = reason.lower()
+        if reason == 'replaced':
+            return
+        if reason == 'finished' and self.repeat_mode == RepeatMode.ONE:
+            await self._play(self.current)
+            return
 
-            if self.repeat_mode == RepeatMode.ALL and reason.lower() != 'loadfailed':
-                self.tracks.append(previous)
-            self.current = None
-            if self.tracks:
-                await self._play(self.tracks.pop(0))
-            else:
-                await self._cleanup()
+        previous = self.current
+        self.history.append(previous)
+        if len(self.history) > 20:
+            del self.history[:-20]
+
+        if (self.repeat_mode == RepeatMode.ALL
+                and reason not in ('loadfailed', 'cleanup')
+                and len(self.tracks) < MAX_PENDING_TRACKS):
+            self.tracks.append(previous)
+        self.current = None
+        if self.tracks:
+            await self._play(self.tracks.pop(0))
+        else:
+            await self._cleanup()
 
     # ------------------------------------------------------------------ queue ops
 
@@ -212,17 +220,40 @@ class MusicPlayer:
     # ------------------------------------------------------------------ controls
 
     async def skip(self) -> None:
-        await self._vl_player.stop()
+        """Skip immediately; do not rely on a STOPPED event from Lavalink."""
+        async with self._advance_lock:
+            if self.current is None:
+                return
+            ended_track = self.current._vl_track
+            await self._vl_player.stop()
+            await self._advance_locked(reason='stopped', ended_track=ended_track)
+
+    async def skip_to(self, position: int) -> None:
+        """Jump to a 1-based waiting track, atomically with the stop request."""
+        async with self._advance_lock:
+            if not 1 <= position <= len(self.tracks):
+                raise IndexError('Queue position out of range')
+            if self.current is not None:
+                ended_track = self.current._vl_track
+                await self._vl_player.stop()
+                self.tracks = self.tracks[position - 1:]
+                await self._advance_locked(reason='stopped', ended_track=ended_track)
+            else:
+                self.tracks = self.tracks[position - 1:]
+                await self._play(self.tracks.pop(0))
 
     async def back(self) -> None:
-        """Go back to the previous track in history."""
-        if not self.history:
-            return
-        prev = self.history.pop()
-        # Insert the previous track at the front of the queue so _on_track_end
-        # picks it up naturally after stop() fires the track-end event.
-        self.tracks.insert(0, prev)
-        await self._vl_player.stop()
+        """Play previous history entry without waiting for a node end event."""
+        async with self._advance_lock:
+            if not self.history:
+                return
+            if self.current is not None:
+                ended_track = self.current._vl_track
+                await self._vl_player.stop()
+                self.tracks.insert(0, self.history.pop())
+                await self._advance_locked(reason='stopped', ended_track=ended_track)
+            else:
+                await self._play(self.history.pop())
 
     async def pause(self) -> None:
         await self._vl_player.set_pause(True)
