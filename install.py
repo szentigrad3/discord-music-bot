@@ -569,7 +569,7 @@ class Installer:
       - ./settings.json:/app/settings.json
     command: ["python", "-m", "bot.dashboard.app"]
     ports:
-      - "{dashboard_port}:{dashboard_port}"
+      - "127.0.0.1:{dashboard_port}:{dashboard_port}"
 """ if enable_dashboard else ''
 
         content = (
