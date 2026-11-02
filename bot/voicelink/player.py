@@ -207,6 +207,12 @@ class Player(VoiceProtocol):
             "channelId": data.get("channel_id"),
         })
         if not (channel_id := data.get("channel_id")):
+            if getattr(self, '_recovering_voice', False):
+                # Lavalink rejected the cached voice token. The guarded
+                # leave/rejoin is intentional; this transient "left voice"
+                # event must not destroy the music queue or protocol object.
+                self._voice_state.clear()
+                return
             await self.teardown()
             self._voice_state.clear()
             return
