@@ -49,6 +49,10 @@ python3 scripts/import_existing_v121.py \
 python3 scripts/import_existing_v121.py \
   --old /mnt/other/JASON/JASON/backup/discord-music-bot --apply
 
+# After importing private YAML, allow the non-root Lavalink container to read it.
+sudo pacman -S --needed acl
+python3 scripts/prepare_lavalink_docker.py --apply
+
 # No activate.fish/source required (and no system-wide pip writes).
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt pyyaml
@@ -77,6 +81,48 @@ the *new* directory only. For standalone installations use the usual
 When you confirm playback and saved playlist commands work, the old directory
 can remain as the backup. Do not delete the backup or promote this development
 branch to production until live playback and dashboard verification pass.
+
+## Fixing Lavalink Docker bind-mount permissions
+
+The official Lavalink Ubuntu image runs as non-root UID **322**. Private
+`application.docker.local.yml` is imported with mode `0600`, which
+intentionally protects its credentials on the host but denies the container's
+user permission to read it. Without an ACL, Lavalink repeatedly crashes with
+`FileNotFoundException: /opt/lavalink/application.docker.local.yml
+(Permission denied)`. This is **not** an out-of-memory error.
+
+On CachyOS / Arch:
+
+```bash
+cd ~/discord-music-bot-next
+sudo pacman -S --needed acl
+
+# View changes without applying them
+python3 scripts/prepare_lavalink_docker.py
+
+# Grant the container UID the smallest required accesses
+python3 scripts/prepare_lavalink_docker.py --apply
+
+docker compose restart lavalink
+docker compose ps
+docker compose exec -T lavalink sh -c \
+  'curl -fsS -H "Authorization: $LAVALINK_SERVER_PASSWORD" http://127.0.0.1:2333/version'
+```
+
+This grants UID 322 **read** on the private Docker YAML, **directory
+traversal** on `lavalink/`, and **read/write** permissions to the
+`lavalink/plugins/` directory and existing plugin files. The standalone
+Lavalink config, bot `settings.json`, `.env` and SQLite database are
+untouched. The utility refuses symlinks and never displays secret values.
+
+If you use a custom Lavalink image variant with a different numeric user ID,
+pass `--uid <number>` based on that image's actual user. Do not use
+`chmod 777`, make your whole data folder world-readable or run the container
+as root merely to fix a read permission.
+
+If the container still restarts, inspect the **next** startup exception with
+`docker compose logs --tail=100 lavalink`. Missing permissions on
+individual plugin files may require rerunning the ACL utility.
 
 ## Configuration details
 
