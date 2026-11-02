@@ -44,7 +44,9 @@ python3 scripts/import_existing_v121.py \
   --old ~/Downloads/discord-music-bot --apply
 
 python3 -m venv .venv
-source .venv/bin/activate
+# CachyOS fish shell:
+source .venv/bin/activate.fish
+# Bash/Zsh alternative: source .venv/bin/activate
 python -m pip install -r requirements.txt pyyaml
 
 python scripts/doctor.py
