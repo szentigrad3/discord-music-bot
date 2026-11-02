@@ -12,9 +12,12 @@ from discord.ext import commands
 
 from bot.db import (
     MAX_SAVED_TRACKS,
+    append_saved_track,
     delete_saved_playlist,
     get_saved_playlist,
     list_saved_playlists,
+    remove_saved_track,
+    rename_saved_playlist,
     save_playlist,
 )
 from bot.logger import get_logger
@@ -51,14 +54,15 @@ class Playlists(commands.Cog):
 
     @staticmethod
     async def _send(ctx: commands.Context, message: str) -> None:
-        await ctx.send(message, ephemeral=ctx.interaction is not None)
+        await ctx.send(message, ephemeral=ctx.interaction is not None,
+                       allowed_mentions=discord.AllowedMentions.none())
 
     @commands.hybrid_group(
         name='playlist', description='Manage your saved music playlists',
         invoke_without_command=True,
     )
     async def playlist(self, ctx: commands.Context) -> None:
-        await self._send(ctx, 'Commands: playlist save, list, load, delete.')
+        await self._send(ctx, 'Commands: playlist save, list, show, load, add, remove, rename, delete.')
 
     @playlist.command(name='save', description='Save currently playing and queued tracks')
     async def save(self, ctx: commands.Context, *, name: str) -> None:
@@ -137,6 +141,71 @@ class Playlists(commands.Cog):
         except ValueError as exc:
             return await self._send(ctx, f'❌ {exc}')
         await self._send(ctx, f'🗑️ Deleted **{name}**.' if deleted
+                         else '❌ No saved playlist with that name.')
+
+
+    @playlist.command(name='show', description='Show the saved track URLs in a playlist')
+    async def show(self, ctx: commands.Context, name: str, page: int = 1) -> None:
+        if ctx.guild is None:
+            return await self._send(ctx, '❌ Saved playlists require a server.')
+        try:
+            urls = await get_saved_playlist(str(ctx.guild.id), str(ctx.author.id), name)
+        except ValueError as exc:
+            return await self._send(ctx, f'❌ {exc}')
+        if urls is None:
+            return await self._send(ctx, '❌ No saved playlist with that name.')
+        total_pages = (len(urls) + 9) // 10
+        if not 1 <= page <= total_pages:
+            return await self._send(ctx, f'❌ Page must be between 1 and {total_pages}.')
+        first = (page - 1) * 10
+        lines = [f'{first + i + 1}. <{url}>' for i, url in enumerate(urls[first:first + 10])]
+        await self._send(ctx, f'🎶 **{name}** (page {page}/{total_pages})\n' + '\n'.join(lines))
+
+    @playlist.command(name='rename', description='Rename one of your saved playlists')
+    async def rename(self, ctx: commands.Context, old_name: str,
+                     new_name: str) -> None:
+        if ctx.guild is None:
+            return await self._send(ctx, '❌ Saved playlists require a server.')
+        try:
+            renamed = await rename_saved_playlist(
+                str(ctx.guild.id), str(ctx.author.id), old_name, new_name
+            )
+        except ValueError as exc:
+            return await self._send(ctx, f'❌ {exc}')
+        await self._send(ctx, f'✅ Renamed playlist to **{new_name}**.' if renamed
+                         else '❌ No saved playlist with that name.')
+
+    @playlist.command(name='add', description='Append the currently playing track to a playlist')
+    async def add(self, ctx: commands.Context, *, name: str) -> None:
+        if ctx.guild is None:
+            return await self._send(ctx, '❌ Saved playlists require a server.')
+        player = self.bot.queues.get(str(ctx.guild.id))
+        current = player.current if player is not None else None
+        if current is None or not current.url:
+            return await self._send(ctx, '❌ There is no current track to add.')
+        try:
+            count = await append_saved_track(
+                str(ctx.guild.id), str(ctx.author.id), name, current.url
+            )
+        except ValueError as exc:
+            return await self._send(ctx, f'❌ {exc}')
+        await self._send(ctx, f'✅ Added current track to **{name}** ({count} tracks).'
+                         if count is not None
+                         else '❌ No saved playlist with that name.')
+
+    @playlist.command(name='remove', description='Remove a track by saved position')
+    async def remove(self, ctx: commands.Context, name: str,
+                     position: int) -> None:
+        if ctx.guild is None:
+            return await self._send(ctx, '❌ Saved playlists require a server.')
+        try:
+            count = await remove_saved_track(
+                str(ctx.guild.id), str(ctx.author.id), name, position
+            )
+        except ValueError as exc:
+            return await self._send(ctx, f'❌ {exc}')
+        await self._send(ctx, f'✅ Removed track {position} from **{name}** ({count} left).'
+                         if count is not None
                          else '❌ No saved playlist with that name.')
 
 
