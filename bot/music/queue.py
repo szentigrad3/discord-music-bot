@@ -20,6 +20,11 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+class VoiceChannelMismatchError(PermissionError):
+    """An existing guild player is already in another voice channel."""
+
+
+
 # A weak mapping avoids retaining idle guild locks indefinitely. Each active
 # caller holds a strong reference to its lock for the duration of the request.
 _connect_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
@@ -44,7 +49,12 @@ async def get_or_create_player(
         if guild_id in bot.queues:
             existing: MusicPlayer = bot.queues[guild_id]
             if existing._vl_player.channel and existing._vl_player.channel.id != voice_channel.id:
-                await existing._vl_player.move_to(voice_channel)
+                # Do not let /play, /search, or /playlist load hijack a player
+                # that is already serving listeners in a different channel.
+                raise VoiceChannelMismatchError(
+                    'BENDER is already playing in another voice channel. '
+                    'Join that channel to add music.'
+                )
             return existing
 
         vl_player: VoicelinkPlayer = await voice_channel.connect(
