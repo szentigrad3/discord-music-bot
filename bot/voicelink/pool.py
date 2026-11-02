@@ -192,6 +192,8 @@ class Node:
                     break
 
                 elif msg.type == aiohttp.WSMsgType.ERROR:
+                    # Otherwise the reconnect loop sees _available=True and exits.
+                    self._available = False
                     self._logger.error(f"WebSocket error for node [{self._identifier}]")
                     break
 
@@ -249,7 +251,8 @@ class Node:
             method=method.value,
             url=uri,
             headers={"Authorization": self._password},
-            json=data
+            json=data,
+            timeout=aiohttp.ClientTimeout(total=20),
         ) as resp:
             if resp.status >= 300:
                 error_body = await resp.text()
